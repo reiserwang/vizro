@@ -1,0 +1,12 @@
+pandas==1.5.3
+numpy==1.23.5
+causalnex==0.12.1
+matplotlib==3.10.5
+networkx==3.5
+scikit-learn==1.7.1
+seaborn==0.13.2
+plotly==6.3.0
+vizro==0.1.26
+pgmpy==0.1.19
+scipy==1.15.3
+dash==3.2.0

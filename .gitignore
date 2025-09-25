@@ -1,0 +1,7 @@
+/.gemini
+/.superdesign
+/.venv
+/__pycache__
+/call_center_data.json
+/callcenter.py
+/causalnex_customer_service.py
