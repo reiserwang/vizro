@@ -165,6 +165,19 @@ The dashboard features a modern Material Design theme with:
 - **Column Selection**: Focus on relevant variables for causal analysis
 - **Browser**: Use modern browsers (Chrome, Firefox, Safari) for best experience
 
+## 🔮 Future Works
+
+We are planning to enhance the forecasting capabilities by adding more advanced models from the `statsmodels` library. Here are some of the models we are considering:
+
+*   **Exponential Smoothing (ETS)**: To better handle data with trend and seasonality.
+*   **Vector Autoregression (VAR)**: For multivariate time series analysis.
+*   **State-Space Models**: To model time series in terms of unobserved states.
+*   **Dynamic Factor Models**: To explain a large number of time series with a small number of unobserved common factors.
+
+We also plan to add more features to the causal analysis section, such as:
+*   Allowing users to add or remove edges from the causal graph.
+*   Implementing what-if analysis to simulate interventions.
+
 ## 📝 License
 
 This project is open source and available under the MIT License.

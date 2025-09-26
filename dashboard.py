@@ -23,6 +23,7 @@ from sklearn.model_selection import cross_val_score, KFold
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -478,42 +479,45 @@ app.layout = html.Div(id='main-container', children=[
     html.Div(id='dashboard-container'),
     html.Div(id='causal-analysis-section', children=[
         html.H2("Causal Analysis Results", className='section-title'),
-        dcc.Graph(id='causal-graph'),
-        dcc.Markdown(id='strongest-causal-insight'),
-        
-        # Model Quality Evaluation Section
-        html.Div(id='model-quality-section', children=[
-            html.H3("Model Quality Evaluation", className='section-title'),
-            dcc.Markdown(id='quality-report'),
-        ]),
-        
-        html.H4("All Causal Relationships with Statistical Tests", className='section-title'),
-        dash_table.DataTable(
-            id='causal-table',
-            columns=[
-                {'name': 'Source', 'id': 'Source'},
-                {'name': 'Target', 'id': 'Target'},
-                {'name': 'Weight', 'id': 'Weight', 'type': 'numeric', 'format': {'specifier': '.4f'}},
-                {'name': 'Pearson r', 'id': 'Pearson_r', 'type': 'numeric', 'format': {'specifier': '.3f'}},
-                {'name': 'P-value', 'id': 'P_value', 'type': 'numeric', 'format': {'specifier': '.3f'}},
-                {'name': 'R²', 'id': 'R_squared', 'type': 'numeric', 'format': {'specifier': '.3f'}},
-                {'name': 'Significant', 'id': 'Significant'},
-            ],
-            sort_action='native',
-            style_cell={'textAlign': 'left'},
-            style_data_conditional=[
-                {
-                    'if': {'filter_query': '{Significant} = Yes'},
-                    'backgroundColor': 'rgba(0, 255, 0, 0.1)',
-                    'color': 'inherit',
-                },
-                {
-                    'if': {'filter_query': '{P_value} < 0.05'},
-                    'fontWeight': 'bold'
-                }
-            ]
-        ),
-        dcc.Markdown(id='causal-weights-note')
+        dcc.Loading(
+            id="loading-causal-analysis",
+            type="default",
+            children=html.Div([
+                dcc.Graph(id='causal-graph'),
+                dcc.Markdown(id='strongest-causal-insight'),
+                html.Div(id='model-quality-section', children=[
+                    html.H3("Model Quality Evaluation", className='section-title'),
+                    dcc.Markdown(id='quality-report'),
+                ]),
+                html.H4("All Causal Relationships with Statistical Tests", className='section-title'),
+                dash_table.DataTable(
+                    id='causal-table',
+                    columns=[
+                        {'name': 'Source', 'id': 'Source'},
+                        {'name': 'Target', 'id': 'Target'},
+                        {'name': 'Weight', 'id': 'Weight', 'type': 'numeric', 'format': {'specifier': '.4f'}},
+                        {'name': 'Pearson r', 'id': 'Pearson_r', 'type': 'numeric', 'format': {'specifier': '.3f'}},
+                        {'name': 'P-value', 'id': 'P_value', 'type': 'numeric', 'format': {'specifier': '.3f'}},
+                        {'name': 'R²', 'id': 'R_squared', 'type': 'numeric', 'format': {'specifier': '.3f'}},
+                        {'name': 'Significant', 'id': 'Significant'},
+                    ],
+                    sort_action='native',
+                    style_cell={'textAlign': 'left'},
+                    style_data_conditional=[
+                        {
+                            'if': {'filter_query': '{Significant} = Yes'},
+                            'backgroundColor': 'rgba(0, 255, 0, 0.1)',
+                            'color': 'inherit',
+                        },
+                        {
+                            'if': {'filter_query': '{P_value} < 0.05'},
+                            'fontWeight': 'bold'
+                        }
+                    ]
+                ),
+                dcc.Markdown(id='causal-weights-note')
+            ])
+        )
     ]),
     
     html.Div(id='forecast-section', children=[
@@ -521,7 +525,7 @@ app.layout = html.Div(id='main-container', children=[
         html.Div([
             dcc.Dropdown(id='time-series-col-dropdown', placeholder='Select Time Column', className='forecast-dropdown'),
             dcc.Dropdown(id='target-col-dropdown', placeholder='Select Target Column', className='forecast-dropdown'),
-            dcc.Dropdown(id='model-dropdown', options=['Linear Regression', 'ARIMA', 'Nowcasting'], placeholder='Select Model', className='forecast-dropdown'),
+            dcc.Dropdown(id='model-dropdown', options=['Linear Regression', 'ARIMA', 'SARIMA', 'Nowcasting'], placeholder='Select Model', className='forecast-dropdown'),
             dcc.Input(id='forecast-periods-input', type='number', placeholder='Periods to forecast', value=10),
             html.Button('Generate Forecast', id='generate-forecast-button', n_clicks=0),
         ], className='forecast-controls'),
@@ -756,6 +760,13 @@ def update_forecast_graph(n_clicks, json_data, time_col, target_col, model_name,
     elif model_name == 'ARIMA':
         model = ARIMA(df[target_col], order=(5,1,0))
         fitted_model = model.fit()
+        forecast = fitted_model.forecast(steps=periods)
+        fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
+        fig.add_trace(go.Scatter(x=forecast.index, y=forecast.values, mode='lines', name='Forecast'))
+
+    elif model_name == 'SARIMA':
+        model = SARIMAX(df[target_col], order=(5,1,0), seasonal_order=(1,1,1,12))
+        fitted_model = model.fit(disp=False)
         forecast = fitted_model.forecast(steps=periods)
         fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
         fig.add_trace(go.Scatter(x=forecast.index, y=forecast.values, mode='lines', name='Forecast'))
