@@ -167,16 +167,22 @@ The dashboard features a modern Material Design theme with:
 
 ## 🔮 Future Works
 
-We are planning to enhance the forecasting capabilities by adding more advanced models from the `statsmodels` library. Here are some of the models we are considering:
+We are planning to enhance the dashboard with more advanced features. Here are some of the areas we are considering for future development:
+
+### Forecasting Models
 
 *   **Exponential Smoothing (ETS)**: To better handle data with trend and seasonality.
 *   **Vector Autoregression (VAR)**: For multivariate time series analysis.
 *   **State-Space Models**: To model time series in terms of unobserved states.
 *   **Dynamic Factor Models**: To explain a large number of time series with a small number of unobserved common factors.
 
-We also plan to add more features to the causal analysis section, such as:
-*   Allowing users to add or remove edges from the causal graph.
-*   Implementing what-if analysis to simulate interventions.
+### Causal Analysis Features
+
+*   **Interactive Graph Editing**: Allow users to manually add or remove relationships from the causal graph to incorporate their domain knowledge.
+*   **"What-if" Analysis (Interventions)**: Implement a feature to simulate the impact of interventions on the system (e.g., "what would be the effect on sales if we increase the marketing budget by 10%?").
+*   **Predictive Modeling with Causal Structure**: Use the learned causal graph to build more robust and interpretable predictive models using `causalnex`'s `DAGRegressor` and `DAGClassifier`.
+*   **Advanced Data Discretization**: Provide options for different discretization strategies for continuous variables to improve the accuracy of the learned causal structure.
+*   **Handling Latent Variables**: Add features to help users identify and model the potential impact of unobserved (latent) variables.
 
 ## 📝 License
 
