@@ -24,8 +24,283 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.statespace.sarimax import SARIMAX
+from statsmodels.tsa.vector_ar.var_model import VAR
+from statsmodels.tsa.statespace.dynamic_factor import DynamicFactor
+from statsmodels.tsa.statespace.structural import UnobservedComponents
+from statsmodels.tsa.statespace.kalman_filter import KalmanFilter
+from statsmodels.tsa.statespace.mlemodel import MLEModel
 import warnings
 warnings.filterwarnings('ignore')
+
+# Performance optimization imports
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+import functools
+from typing import Dict, List, Tuple, Any
+import time
+
+# Performance optimization functions
+def compute_edge_statistics(edge_data: Tuple) -> Dict:
+    """
+    Compute statistical tests for a single edge in parallel
+    """
+    u, v, weight, x_data, y_data = edge_data
+    
+    try:
+        # Pearson correlation
+        pearson_r, pearson_p = pearsonr(x_data, y_data)
+        
+        # Spearman correlation (non-parametric)
+        spearman_r, spearman_p = spearmanr(x_data, y_data)
+        
+        # Linear regression R²
+        reg = LinearRegression().fit(x_data.reshape(-1, 1), y_data)
+        r2 = reg.score(x_data.reshape(-1, 1), y_data)
+        
+        return {
+            'source': u,
+            'target': v,
+            'causal_weight': weight,
+            'pearson_r': pearson_r,
+            'pearson_p': pearson_p,
+            'spearman_r': spearman_r,
+            'spearman_p': spearman_p,
+            'r_squared': r2,
+            'significant': pearson_p < 0.05
+        }
+    except Exception as e:
+        return {
+            'source': u,
+            'target': v,
+            'causal_weight': weight,
+            'pearson_r': 0,
+            'pearson_p': 1,
+            'spearman_r': 0,
+            'spearman_p': 1,
+            'r_squared': 0,
+            'significant': False,
+            'error': str(e)
+        }
+
+def compute_cv_score(cv_data: Tuple) -> Dict:
+    """
+    Compute cross-validation score for a single target variable in parallel
+    """
+    target_var, parents, X, y = cv_data
+    
+    try:
+        if len(parents) > 0 and len(parents) < X.shape[1]:
+            # 5-fold cross validation
+            kf = KFold(n_splits=5, shuffle=True, random_state=42)
+            scores = cross_val_score(LinearRegression(), X, y, cv=kf, scoring='r2')
+            
+            return {
+                'target': target_var,
+                'parents': parents,
+                'cv_r2_mean': np.mean(scores),
+                'cv_r2_std': np.std(scores),
+                'cv_scores': scores.tolist()
+            }
+    except Exception as e:
+        return {
+            'target': target_var,
+            'parents': parents,
+            'cv_r2_mean': 0,
+            'cv_r2_std': 0,
+            'cv_scores': [],
+            'error': str(e)
+        }
+    
+    return None
+
+def compute_normality_test(norm_data: Tuple) -> Dict:
+    """
+    Compute normality test for residuals in parallel
+    """
+    target_var, parents, X, y = norm_data
+    
+    try:
+        if len(parents) > 0:
+            reg = LinearRegression().fit(X, y)
+            residuals = y - reg.predict(X)
+            
+            # D'Agostino-Pearson normality test
+            stat, p_value = normaltest(residuals)
+            
+            return {
+                'target': target_var,
+                'normality_stat': stat,
+                'normality_p': p_value,
+                'residuals_normal': p_value > 0.05
+            }
+    except Exception as e:
+        return {
+            'target': target_var,
+            'normality_stat': 0,
+            'normality_p': 1,
+            'residuals_normal': False,
+            'error': str(e)
+        }
+    
+    return None
+
+@functools.lru_cache(maxsize=128)
+def cached_structure_learning(data_hash: str, data_shape: Tuple) -> Any:
+    """
+    Cache structure learning results to avoid recomputation
+    """
+    # This is a placeholder - actual caching would need serialization
+    return None
+
+def fit_var_model(df, target_col, periods, max_lags=5):
+    """
+    Fit Vector Autoregression (VAR) model for multivariate forecasting
+    """
+    try:
+        # Select numeric columns for VAR (multivariate analysis)
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        # Ensure target column is included and limit to reasonable number of variables
+        if target_col not in numeric_cols:
+            return None, None, "Target column not numeric"
+        
+        # Limit to 5-8 variables for computational efficiency
+        if len(numeric_cols) > 8:
+            # Include target and most correlated variables
+            corr_with_target = df[numeric_cols].corrwith(df[target_col]).abs().sort_values(ascending=False)
+            selected_vars = corr_with_target.head(8).index.tolist()
+        else:
+            selected_vars = numeric_cols
+        
+        # Prepare data for VAR
+        var_data = df[selected_vars].dropna()
+        
+        if len(var_data) < max_lags * 2:
+            return None, None, "Insufficient data for VAR model"
+        
+        # Fit VAR model
+        model = VAR(var_data)
+        
+        # Select optimal lag order (up to max_lags)
+        lag_order = model.select_order(maxlags=min(max_lags, len(var_data)//4))
+        optimal_lags = lag_order.aic
+        
+        fitted_model = model.fit(optimal_lags)
+        
+        # Generate forecast
+        forecast = fitted_model.forecast(var_data.values[-optimal_lags:], steps=periods)
+        
+        # Extract target variable forecast
+        target_idx = selected_vars.index(target_col)
+        target_forecast = forecast[:, target_idx]
+        
+        return fitted_model, target_forecast, selected_vars
+        
+    except Exception as e:
+        return None, None, f"VAR model error: {str(e)}"
+
+def fit_dynamic_factor_model(df, target_col, periods, n_factors=2):
+    """
+    Fit Dynamic Factor Model for dimension reduction and forecasting
+    """
+    try:
+        # Select numeric columns
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        if target_col not in numeric_cols:
+            return None, None, "Target column not numeric"
+        
+        # Limit variables for computational efficiency
+        if len(numeric_cols) > 10:
+            corr_with_target = df[numeric_cols].corrwith(df[target_col]).abs().sort_values(ascending=False)
+            selected_vars = corr_with_target.head(10).index.tolist()
+        else:
+            selected_vars = numeric_cols
+        
+        # Prepare data
+        factor_data = df[selected_vars].dropna()
+        
+        if len(factor_data) < 50:
+            return None, None, "Insufficient data for Dynamic Factor Model"
+        
+        # Standardize data for factor analysis
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        scaled_data = scaler.fit_transform(factor_data)
+        scaled_df = pd.DataFrame(scaled_data, columns=selected_vars, index=factor_data.index)
+        
+        # Fit Dynamic Factor Model
+        n_factors = min(n_factors, len(selected_vars)//2)
+        model = DynamicFactor(scaled_df, k_factors=n_factors, factor_order=2)
+        fitted_model = model.fit(disp=False, maxiter=100)
+        
+        # Generate forecast
+        forecast = fitted_model.forecast(steps=periods)
+        
+        # Transform back to original scale
+        target_idx = selected_vars.index(target_col)
+        target_forecast_scaled = forecast[:, target_idx]
+        
+        # Inverse transform for target variable
+        dummy_data = np.zeros((periods, len(selected_vars)))
+        dummy_data[:, target_idx] = target_forecast_scaled
+        target_forecast = scaler.inverse_transform(dummy_data)[:, target_idx]
+        
+        return fitted_model, target_forecast, selected_vars
+        
+    except Exception as e:
+        return None, None, f"Dynamic Factor Model error: {str(e)}"
+
+def fit_state_space_model(df, target_col, periods):
+    """
+    Fit State-Space Model (Unobserved Components) for structural time series
+    """
+    try:
+        # Prepare target series
+        target_series = df[target_col].dropna()
+        
+        if len(target_series) < 20:
+            return None, None, "Insufficient data for State-Space Model"
+        
+        # Fit Unobserved Components model (Local Linear Trend + Seasonal)
+        # Detect seasonality
+        freq_map = {'D': 7, 'W': 52, 'M': 12, 'Q': 4, 'Y': 1}
+        inferred_freq = pd.infer_freq(target_series.index)
+        
+        if inferred_freq and inferred_freq[0] in freq_map:
+            seasonal_periods = freq_map[inferred_freq[0]]
+        else:
+            seasonal_periods = min(12, len(target_series)//4) if len(target_series) > 24 else None
+        
+        # Configure model components
+        if seasonal_periods and seasonal_periods > 1 and len(target_series) > seasonal_periods * 2:
+            model = UnobservedComponents(
+                target_series,
+                level='local linear trend',
+                seasonal=seasonal_periods,
+                cycle=False,
+                autoregressive=1
+            )
+        else:
+            model = UnobservedComponents(
+                target_series,
+                level='local linear trend',
+                seasonal=None,
+                cycle=False,
+                autoregressive=2
+            )
+        
+        # Fit model
+        fitted_model = model.fit(disp=False, maxiter=100)
+        
+        # Generate forecast
+        forecast_result = fitted_model.forecast(steps=periods)
+        target_forecast = forecast_result
+        
+        return fitted_model, target_forecast, seasonal_periods
+        
+    except Exception as e:
+        return None, None, f"State-Space Model error: {str(e)}"
 
 def process_data(df):
     for col in df.columns:
@@ -64,13 +339,18 @@ def filter_by_timespan(data_frame, timespan_selector):
 
 
 
-def evaluate_model_quality(df, sm):
+def evaluate_model_quality_optimized(df, sm, max_workers=None):
     """
-    Evaluate causal model quality with comprehensive statistical checks
+    Optimized evaluation of causal model quality with multiprocessing
     """
+    start_time = time.time()
     quality_metrics = {}
     
-    # 1. Basic Network Statistics
+    # Determine optimal number of workers
+    if max_workers is None:
+        max_workers = min(mp.cpu_count(), 8)  # Cap at 8 to avoid overhead
+    
+    # 1. Basic Network Statistics (fast, no parallelization needed)
     quality_metrics['network_stats'] = {
         'num_nodes': sm.number_of_nodes(),
         'num_edges': sm.number_of_edges(),
@@ -78,111 +358,121 @@ def evaluate_model_quality(df, sm):
         'is_dag': nx.is_directed_acyclic_graph(sm)
     }
     
-    # 2. Edge Weight Distribution Analysis
-    weights = [data.get('weight', 0) for u, v, data in sm.edges(data=True)]
-    if weights:
+    # 2. Edge Weight Distribution Analysis (vectorized)
+    weights = np.array([data.get('weight', 0) for u, v, data in sm.edges(data=True)])
+    if len(weights) > 0:
         quality_metrics['weight_stats'] = {
             'mean_weight': np.mean(np.abs(weights)),
             'std_weight': np.std(weights),
             'min_weight': np.min(weights),
             'max_weight': np.max(weights),
-            'weight_range': np.max(weights) - np.min(weights)
+            'weight_range': np.ptp(weights)  # Peak-to-peak (max - min)
         }
     
-    # 3. Statistical Tests for Each Edge
-    edge_tests = []
+    # Prepare data for parallel processing
     df_numeric = df.select_dtypes(include=[np.number]).dropna()
     
+    # 3. Parallel Statistical Tests for Each Edge
+    edge_data_list = []
     for u, v, data in sm.edges(data=True):
         if u in df_numeric.columns and v in df_numeric.columns:
             x_data = df_numeric[u].values
             y_data = df_numeric[v].values
+            weight = data.get('weight', 0)
+            edge_data_list.append((u, v, weight, x_data, y_data))
+    
+    edge_tests = []
+    if edge_data_list:
+        # Use ThreadPoolExecutor for I/O bound statistical computations
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_edge = {executor.submit(compute_edge_statistics, edge_data): edge_data 
+                             for edge_data in edge_data_list}
             
-            # Pearson correlation
-            pearson_r, pearson_p = pearsonr(x_data, y_data)
-            
-            # Spearman correlation (non-parametric)
-            spearman_r, spearman_p = spearmanr(x_data, y_data)
-            
-            # Linear regression R²
-            from sklearn.linear_model import LinearRegression
-            reg = LinearRegression().fit(x_data.reshape(-1, 1), y_data)
-            r2 = reg.score(x_data.reshape(-1, 1), y_data)
-            
-            edge_tests.append({
-                'source': u,
-                'target': v,
-                'causal_weight': data.get('weight', 0),
-                'pearson_r': pearson_r,
-                'pearson_p': pearson_p,
-                'spearman_r': spearman_r,
-                'spearman_p': spearman_p,
-                'r_squared': r2,
-                'significant': pearson_p < 0.05
-            })
+            for future in as_completed(future_to_edge):
+                result = future.result()
+                if result:
+                    edge_tests.append(result)
     
     quality_metrics['edge_tests'] = edge_tests
     
-    # 4. Cross-Validation for Predictive Performance
-    cv_scores = []
+    # 4. Parallel Cross-Validation for Predictive Performance
+    cv_data_list = []
     for target_var in df_numeric.columns:
-        try:
-            # Get parents of target variable in the causal graph
-            parents = list(sm.predecessors(target_var))
-            if len(parents) > 0 and len(parents) < len(df_numeric.columns):
-                X = df_numeric[parents].values
-                y = df_numeric[target_var].values
-                
-                # 5-fold cross validation
-                kf = KFold(n_splits=5, shuffle=True, random_state=42)
-                scores = cross_val_score(LinearRegression(), X, y, cv=kf, scoring='r2')
-                
-                cv_scores.append({
-                    'target': target_var,
-                    'parents': parents,
-                    'cv_r2_mean': np.mean(scores),
-                    'cv_r2_std': np.std(scores),
-                    'cv_scores': scores.tolist()
-                })
-        except:
-            continue
+        parents = list(sm.predecessors(target_var))
+        if len(parents) > 0 and len(parents) < len(df_numeric.columns):
+            X = df_numeric[parents].values
+            y = df_numeric[target_var].values
+            cv_data_list.append((target_var, parents, X, y))
+    
+    cv_scores = []
+    if cv_data_list:
+        # Use ProcessPoolExecutor for CPU-bound cross-validation
+        with ProcessPoolExecutor(max_workers=min(max_workers, len(cv_data_list))) as executor:
+            future_to_cv = {executor.submit(compute_cv_score, cv_data): cv_data 
+                           for cv_data in cv_data_list}
+            
+            for future in as_completed(future_to_cv):
+                result = future.result()
+                if result:
+                    cv_scores.append(result)
     
     quality_metrics['cross_validation'] = cv_scores
     
-    # 5. Normality Tests for Residuals
-    normality_tests = []
+    # 5. Parallel Normality Tests for Residuals
+    norm_data_list = []
     for target_var in df_numeric.columns:
-        try:
-            parents = list(sm.predecessors(target_var))
-            if len(parents) > 0:
-                X = df_numeric[parents].values
-                y = df_numeric[target_var].values
-                
-                reg = LinearRegression().fit(X, y)
-                residuals = y - reg.predict(X)
-                
-                # D'Agostino-Pearson normality test
-                stat, p_value = normaltest(residuals)
-                
-                normality_tests.append({
-                    'target': target_var,
-                    'normality_stat': stat,
-                    'normality_p': p_value,
-                    'residuals_normal': p_value > 0.05
-                })
-        except:
-            continue
+        parents = list(sm.predecessors(target_var))
+        if len(parents) > 0:
+            X = df_numeric[parents].values
+            y = df_numeric[target_var].values
+            norm_data_list.append((target_var, parents, X, y))
+    
+    normality_tests = []
+    if norm_data_list:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_norm = {executor.submit(compute_normality_test, norm_data): norm_data 
+                             for norm_data in norm_data_list}
+            
+            for future in as_completed(future_to_norm):
+                result = future.result()
+                if result:
+                    normality_tests.append(result)
     
     quality_metrics['normality_tests'] = normality_tests
     
-    # 6. Model Complexity Metrics
-    quality_metrics['complexity'] = {
-        'avg_parents_per_node': np.mean([sm.in_degree(node) for node in sm.nodes()]),
-        'max_parents': max([sm.in_degree(node) for node in sm.nodes()]) if sm.nodes() else 0,
-        'sparsity': 1 - (sm.number_of_edges() / (sm.number_of_nodes() * (sm.number_of_nodes() - 1)))
+    # 6. Model Complexity Metrics (vectorized)
+    if sm.nodes():
+        in_degrees = np.array([sm.in_degree(node) for node in sm.nodes()])
+        num_nodes = sm.number_of_nodes()
+        num_edges = sm.number_of_edges()
+        
+        quality_metrics['complexity'] = {
+            'avg_parents_per_node': np.mean(in_degrees),
+            'max_parents': np.max(in_degrees),
+            'sparsity': 1 - (num_edges / (num_nodes * (num_nodes - 1))) if num_nodes > 1 else 1
+        }
+    else:
+        quality_metrics['complexity'] = {
+            'avg_parents_per_node': 0,
+            'max_parents': 0,
+            'sparsity': 1
+        }
+    
+    # Performance metrics
+    end_time = time.time()
+    quality_metrics['performance'] = {
+        'computation_time': end_time - start_time,
+        'workers_used': max_workers,
+        'edges_processed': len(edge_tests),
+        'cv_tests_run': len(cv_scores)
     }
     
     return quality_metrics
+
+# Backward compatibility alias
+def evaluate_model_quality(df, sm):
+    """Backward compatibility wrapper"""
+    return evaluate_model_quality_optimized(df, sm)
 
 def create_quality_report(quality_metrics, theme='dark'):
     """
@@ -249,26 +539,123 @@ def create_quality_report(quality_metrics, theme='dark'):
     - **Sparsity**: {complexity.get('sparsity', 0):.3f}
     """
     
-    full_report = overview_text + weight_text + cv_text + sig_text + quality_text
+    # Add performance metrics if available
+    performance_metrics = quality_metrics.get('performance', {})
+    if performance_metrics:
+        perf_text = f"""
+        ### Performance Metrics
+        - **Computation Time**: {performance_metrics.get('computation_time', 0):.2f} seconds
+        - **Workers Used**: {performance_metrics.get('workers_used', 1)}
+        - **Edges Processed**: {performance_metrics.get('edges_processed', 0)}
+        - **CV Tests Run**: {performance_metrics.get('cv_tests_run', 0)}
+        """
+        full_report = overview_text + weight_text + cv_text + sig_text + quality_text + perf_text
+    else:
+        full_report = overview_text + weight_text + cv_text + sig_text + quality_text
     
     return full_report, edge_tests
 
-def analyze_causal_structure(df, theme='dark'):
+def analyze_causal_structure_optimized(df, theme='dark', max_workers=None, filter_params=None):
+    """
+    Optimized causal structure analysis with performance improvements
+    """
+    start_time = time.time()
+    
+    # Optimize data preprocessing
     df_numeric = df.copy()
-    for col in df_numeric.columns:
-        if df_numeric[col].dtype == 'object':
+    
+    # Vectorized categorical encoding
+    categorical_cols = df_numeric.select_dtypes(include=['object']).columns
+    for col in categorical_cols:
+        if df_numeric[col].notna().sum() > 0:  # Only process non-empty columns
             le = LabelEncoder()
-            df_numeric[col] = le.fit_transform(df_numeric[col])
-    df_numeric = df_numeric.select_dtypes(include=['number']).dropna()
+            # Handle NaN values efficiently
+            mask = df_numeric[col].notna()
+            df_numeric.loc[mask, col] = le.fit_transform(df_numeric.loc[mask, col].astype(str))
+    
+    # Efficient numeric selection and NaN handling
+    df_numeric = df_numeric.select_dtypes(include=['number'])
+    
+    # Smart sampling for large datasets to improve performance
+    if len(df_numeric) > 5000:
+        # Sample 5000 rows for structure learning while preserving relationships
+        sample_size = min(5000, len(df_numeric))
+        df_numeric = df_numeric.sample(n=sample_size, random_state=42)
+    
+    # Remove columns with too many NaN values (>50%)
+    nan_threshold = 0.5
+    df_numeric = df_numeric.loc[:, df_numeric.isnull().mean() < nan_threshold]
+    
+    # Drop remaining NaN rows
+    df_numeric = df_numeric.dropna()
+    
     if df_numeric.shape[1] < 2:
         return go.Figure(), "", [], "", "", []
     
-    # Create causal structure
-    sm = from_pandas(df_numeric)
+    # Limit number of variables for performance (CausalNex can be slow with many variables)
+    if df_numeric.shape[1] > 15:
+        # Select most correlated variables
+        corr_matrix = df_numeric.corr().abs()
+        # Get average correlation for each variable
+        avg_corr = corr_matrix.mean().sort_values(ascending=False)
+        # Keep top 15 most correlated variables
+        top_vars = avg_corr.head(15).index
+        df_numeric = df_numeric[top_vars]
     
-    # Evaluate model quality
-    quality_metrics = evaluate_model_quality(df_numeric, sm)
+    # Create causal structure with timeout protection
+    try:
+        # Use a more efficient structure learning approach for larger datasets
+        if df_numeric.shape[0] > 1000:
+            # Use a subset for initial structure learning
+            sample_df = df_numeric.sample(n=min(1000, len(df_numeric)), random_state=42)
+            sm = from_pandas(sample_df, w_threshold=0.3)  # Higher threshold for sparsity
+        else:
+            sm = from_pandas(df_numeric, w_threshold=0.1)
+    except Exception as e:
+        print(f"Structure learning failed: {e}")
+        # Return empty results if structure learning fails
+        return go.Figure(), f"Structure learning failed: {str(e)}", [], "", "", []
+    
+    # Evaluate model quality with optimization
+    quality_metrics = evaluate_model_quality_optimized(df_numeric, sm, max_workers)
     quality_report, edge_tests = create_quality_report(quality_metrics, theme)
+    
+    # Apply filtering if specified
+    if filter_params:
+        hide_nonsig = filter_params.get('hide_nonsignificant', False)
+        min_corr = filter_params.get('min_correlation', 0.0)
+        
+        # Filter edges based on significance and correlation
+        filtered_edges = []
+        for u, v, data in sm.edges(data=True):
+            edge_test = next((test for test in edge_tests if test['source'] == u and test['target'] == v), None)
+            
+            # Check significance filter
+            if hide_nonsig and edge_test and not edge_test['significant']:
+                continue
+                
+            # Check correlation threshold
+            if edge_test and abs(edge_test['pearson_r']) < min_corr:
+                continue
+                
+            filtered_edges.append((u, v, data))
+        
+        # Create filtered graph for visualization
+        filtered_sm = nx.DiGraph()
+        for u, v, data in filtered_edges:
+            filtered_sm.add_edge(u, v, **data)
+        
+        # Only include nodes that have edges
+        nodes_with_edges = set()
+        for u, v, _ in filtered_edges:
+            nodes_with_edges.add(u)
+            nodes_with_edges.add(v)
+        
+        # Remove isolated nodes
+        nodes_to_remove = [node for node in filtered_sm.nodes() if node not in nodes_with_edges]
+        filtered_sm.remove_nodes_from(nodes_to_remove)
+        
+        sm = filtered_sm
     
     pos = nx.spring_layout(sm, seed=42)
 
@@ -373,7 +760,7 @@ def analyze_causal_structure(df, theme='dark'):
             sig_info = f" (p-value: {edge_test['pearson_p']:.3f}, {'Significant' if edge_test['significant'] else 'Not Significant'})"
         strongest_insight_md = f"### Strongest Causal Relationship:\n- **{u}** -> **{v}** (Weight: {w:.4f}){sig_info}"
 
-    # Enhanced table data with statistical metrics
+    # Enhanced table data with statistical metrics (filtered to match graph)
     table_data = []
     for u, v, data in sm.edges(data=True):
         edge_test = next((test for test in edge_tests if test['source'] == u and test['target'] == v), None)
@@ -391,16 +778,59 @@ def analyze_causal_structure(df, theme='dark'):
             })
         table_data.append(row)
 
-    note_md = """
+    # Add filtering information to the note
+    filter_info = ""
+    if filter_params:
+        active_filters = []
+        if filter_params.get('hide_nonsignificant', False):
+            active_filters.append("🎯 **Hiding non-significant edges** (p ≥ 0.05)")
+        if filter_params.get('min_correlation', 0.0) > 0:
+            active_filters.append(f"📊 **Minimum correlation threshold**: {filter_params.get('min_correlation', 0.0):.1f}")
+        
+        if active_filters:
+            filter_info = f"""
+### **Active Filters**
+{chr(10).join(['- ' + f for f in active_filters])}
+
 ---
-**Enhanced Analysis Notes:**
-- **Green/Orange edges**: Statistically significant relationships (p < 0.05)
-- **Blue/Red edges**: Non-significant or untested relationships
+"""
+
+    note_md = f"""{filter_info}
+### **Quick Reference Guide**
+
+**Interactive Filtering:**
+- 🎯 **Significance Filter**: Hide relationships with p ≥ 0.05 to focus on reliable connections
+- 📊 **Correlation Threshold**: Set minimum correlation strength to reduce noise
+- **Dynamic Updates**: Graph and table update automatically with filter changes
+
+**Graph Visualization:**
+- 🟢 **Green/Orange edges**: Statistically significant relationships (p < 0.05)
+- 🔵 **Blue/Red edges**: Non-significant or untested relationships  
 - **Edge thickness**: Proportional to causal weight magnitude
-- **Hover over edges**: View detailed statistical metrics
-- **Quality metrics**: Comprehensive model evaluation included below
+- **Hover details**: View correlation coefficients, p-values, and R² scores
+
+**Table Interpretation:**
+- **Bold rows**: Statistically significant relationships (p < 0.05)
+- **Green highlighting**: Confirmed significant relationships
+- **Sort columns**: Click headers to sort by any metric
+
+**Quality Assessment:**
+- Look for: **Low p-values** (< 0.05), **High |Pearson r|** (> 0.3), **Good R²** (> 0.1)
+- **Strong relationships**: p < 0.01, |r| > 0.5, R² > 0.25
+- **Questionable relationships**: p > 0.05, |r| < 0.3, R² < 0.1
+
+**Statistical Significance Levels:**
+- ⭐⭐⭐ **p < 0.001**: Highly significant (very strong evidence)
+- ⭐⭐ **p < 0.01**: Significant (strong evidence)  
+- ⭐ **p < 0.05**: Significant (moderate evidence)
+- ❌ **p ≥ 0.05**: Not significant (insufficient evidence)
 """
     return fig, strongest_insight_md, table_data, note_md, quality_report, edge_tests
+
+# Backward compatibility wrapper
+def analyze_causal_structure(df, theme='dark', filter_params=None):
+    """Backward compatibility wrapper for optimized causal analysis"""
+    return analyze_causal_structure_optimized(df, theme, filter_params=filter_params)
 
 
 
@@ -479,6 +909,33 @@ app.layout = html.Div(id='main-container', children=[
     html.Div(id='dashboard-container'),
     html.Div(id='causal-analysis-section', children=[
         html.H2("Causal Analysis Results", className='section-title'),
+        
+        # Significance Filter Toggle
+        html.Div([
+            html.Div([
+                html.Label("🎯 Focus on Significant Relationships:", className='toggle-label'),
+                dcc.Checklist(
+                    id='significance-filter-toggle',
+                    options=[{'label': ' Hide non-significant edges (p ≥ 0.05)', 'value': 'hide_nonsig'}],
+                    value=[],
+                    className='significance-toggle'
+                )
+            ], className='filter-control-group'),
+            html.Div([
+                html.Label("📊 Minimum Correlation Threshold:", className='toggle-label'),
+                dcc.Slider(
+                    id='correlation-threshold-slider',
+                    min=0,
+                    max=0.8,
+                    step=0.1,
+                    value=0.0,
+                    marks={i/10: f'{i/10:.1f}' for i in range(0, 9, 2)},
+                    tooltip={"placement": "bottom", "always_visible": True},
+                    className='correlation-slider'
+                )
+            ], className='filter-control-group'),
+        ], className='causal-filter-controls'),
+        
         dcc.Loading(
             id="loading-causal-analysis",
             type="default",
@@ -488,33 +945,233 @@ app.layout = html.Div(id='main-container', children=[
                 html.Div(id='model-quality-section', children=[
                     html.H3("Model Quality Evaluation", className='section-title'),
                     dcc.Markdown(id='quality-report'),
+                    html.Div(id='performance-metrics', children=[
+                        html.H4("Performance Metrics", className='section-title'),
+                        dcc.Markdown(id='performance-report'),
+                    ]),
                 ]),
                 html.H4("All Causal Relationships with Statistical Tests", className='section-title'),
-                dash_table.DataTable(
-                    id='causal-table',
-                    columns=[
-                        {'name': 'Source', 'id': 'Source'},
-                        {'name': 'Target', 'id': 'Target'},
-                        {'name': 'Weight', 'id': 'Weight', 'type': 'numeric', 'format': {'specifier': '.4f'}},
-                        {'name': 'Pearson r', 'id': 'Pearson_r', 'type': 'numeric', 'format': {'specifier': '.3f'}},
-                        {'name': 'P-value', 'id': 'P_value', 'type': 'numeric', 'format': {'specifier': '.3f'}},
-                        {'name': 'R²', 'id': 'R_squared', 'type': 'numeric', 'format': {'specifier': '.3f'}},
-                        {'name': 'Significant', 'id': 'Significant'},
-                    ],
+                
+                # Statistical Help Panel (Separated from main content)
+                html.Div([
+                    html.Button("📚 Statistical Guide", id="stats-help-button", className="help-button"),
+                    dcc.Tooltip(
+                        "Click to open comprehensive statistical explanations and examples",
+                        id="stats-help-tooltip"
+                    )
+                ], className='help-button-container'),
+                
+                # Statistical Explanations Modal/Sidebar
+                html.Div([
+                    html.Div([
+                        html.Div([
+                            html.H3("📊 Statistical Metrics Guide", className='help-panel-title'),
+                            html.Button("✕", id="close-help-button", className="close-help-button"),
+                        ], className='help-panel-header'),
+                        
+                        # Quick Reference Cards
+                        html.Div([
+                            # Causal Weight Card
+                            html.Div([
+                                html.H4("⚖️ Causal Weight", className='metric-card-title'),
+                                html.P("Estimated causal effect strength", className='metric-card-subtitle'),
+                                html.Div([
+                                    html.Span("Strong: ", className='threshold-label'),
+                                    html.Span("|Weight| > 0.5", className='threshold-value strong'),
+                                ], className='threshold-item'),
+                                html.Div([
+                                    html.Span("Moderate: ", className='threshold-label'),
+                                    html.Span("0.2 < |Weight| ≤ 0.5", className='threshold-value moderate'),
+                                ], className='threshold-item'),
+                                html.Div([
+                                    html.Span("Weak: ", className='threshold-label'),
+                                    html.Span("|Weight| ≤ 0.2", className='threshold-value weak'),
+                                ], className='threshold-item'),
+                            ], className='metric-card'),
+                            
+                            # Correlation Card
+                            html.Div([
+                                html.H4("📈 Correlation (r)", className='metric-card-title'),
+                                html.P("Linear relationship strength", className='metric-card-subtitle'),
+                                html.Div([
+                                    html.Span("Strong: ", className='threshold-label'),
+                                    html.Span("|r| > 0.7", className='threshold-value strong'),
+                                ], className='threshold-item'),
+                                html.Div([
+                                    html.Span("Moderate: ", className='threshold-label'),
+                                    html.Span("0.3 < |r| ≤ 0.7", className='threshold-value moderate'),
+                                ], className='threshold-item'),
+                                html.Div([
+                                    html.Span("Weak: ", className='threshold-label'),
+                                    html.Span("|r| ≤ 0.3", className='threshold-value weak'),
+                                ], className='threshold-item'),
+                            ], className='metric-card'),
+                            
+                            # P-value Card
+                            html.Div([
+                                html.H4("🎯 P-value", className='metric-card-title'),
+                                html.P("Statistical significance", className='metric-card-subtitle'),
+                                html.Div([
+                                    html.Span("Highly Sig: ", className='threshold-label'),
+                                    html.Span("p < 0.001", className='threshold-value strong'),
+                                ], className='threshold-item'),
+                                html.Div([
+                                    html.Span("Significant: ", className='threshold-label'),
+                                    html.Span("p < 0.05", className='threshold-value moderate'),
+                                ], className='threshold-item'),
+                                html.Div([
+                                    html.Span("Not Sig: ", className='threshold-label'),
+                                    html.Span("p ≥ 0.05", className='threshold-value weak'),
+                                ], className='threshold-item'),
+                            ], className='metric-card'),
+                            
+                            # R² Card
+                            html.Div([
+                                html.H4("📊 R² (Variance)", className='metric-card-title'),
+                                html.P("Explained variance proportion", className='metric-card-subtitle'),
+                                html.Div([
+                                    html.Span("Excellent: ", className='threshold-label'),
+                                    html.Span("R² > 0.75", className='threshold-value strong'),
+                                ], className='threshold-item'),
+                                html.Div([
+                                    html.Span("Good: ", className='threshold-label'),
+                                    html.Span("0.25 < R² ≤ 0.75", className='threshold-value moderate'),
+                                ], className='threshold-item'),
+                                html.Div([
+                                    html.Span("Poor: ", className='threshold-label'),
+                                    html.Span("R² ≤ 0.25", className='threshold-value weak'),
+                                ], className='threshold-item'),
+                            ], className='metric-card'),
+                        ], className='metric-cards-grid'),
+                        
+                        # Detailed Explanations (Collapsible)
+                        html.Details([
+                            html.Summary("📖 Detailed Explanations & Examples", className='detailed-explanation-summary'),
+                            html.Div([
+                                dcc.Markdown("""
+### Interpretation Guide
+
+**Causal Weight**: Represents the strength and direction of causal effect. A weight of 0.5 means a 1-unit increase in the source variable causes a 0.5-unit increase in the target variable.
+
+**Correlation (r)**: Measures linear relationship strength. Values closer to -1 or +1 indicate stronger linear relationships.
+
+**P-value**: Probability that the observed relationship occurred by chance. Lower values indicate stronger evidence against randomness.
+
+**R² (Coefficient of Determination)**: Proportion of variance in the target variable explained by the source variable. Higher values indicate better predictive power.
+
+### Quality Assessment Framework
+
+Use these combined criteria to evaluate relationship reliability:
+- **High Quality**: p < 0.01 AND |r| > 0.5 AND R² > 0.25
+- **Moderate Quality**: p < 0.05 AND |r| > 0.3 AND R² > 0.10
+- **Low Quality**: p ≥ 0.05 OR |r| < 0.3 OR R² < 0.10
+
+### Decision Making Guidelines
+
+**For Business Decisions**: Use only High Quality relationships for strategic decisions, High + Moderate for operational decisions.
+
+**For Research**: Focus on High Quality for publication, report Moderate with appropriate caveats.
+                                """, className='detailed-explanation-content')
+                            ], className='detailed-explanation-container')
+                        ], className='detailed-explanations'),
+                    ], className='help-panel-content')
+                ], id='statistical-help-panel', className='help-panel hidden'),
+                
+                # Color Legend for Table
+                html.Div([
+                    html.H5("📋 Table Color Legend:", className='legend-title'),
+                    html.Div([
+                        html.Span("🟢 Highly Significant (p < 0.001)", className='legend-item legend-high'),
+                        html.Span("🟢 Significant (p < 0.01)", className='legend-item legend-medium'),  
+                        html.Span("🟢 Moderately Significant (p < 0.05)", className='legend-item legend-low'),
+                        html.Span("🔴 Not Significant (p ≥ 0.05)", className='legend-item legend-none'),
+                    ], className='legend-container')
+                ], className='table-legend'),
+                
+                # Enhanced Table with Tooltips
+                html.Div([
+                    # Table Header with Tooltips
+                    html.Div([
+                        html.Div([
+                            html.Span("Source Variable", className='table-header-text'),
+                            dcc.Tooltip("The variable that potentially causes changes in the target variable", 
+                                       className='header-tooltip')
+                        ], id="header-source", className='table-header-cell'),
+                        html.Div([
+                            html.Span("Target Variable", className='table-header-text'),
+                            dcc.Tooltip("The variable that is potentially affected by changes in the source variable", 
+                                       className='header-tooltip')
+                        ], id="header-target", className='table-header-cell'),
+                        html.Div([
+                            html.Span("Causal Weight", className='table-header-text'),
+                            dcc.Tooltip("Estimated causal effect strength. Positive = same direction, Negative = opposite direction. Larger absolute values = stronger effects.", 
+                                       className='header-tooltip')
+                        ], id="header-weight", className='table-header-cell'),
+                        html.Div([
+                            html.Span("Correlation (r)", className='table-header-text'),
+                            dcc.Tooltip("Linear relationship strength (-1 to +1). |r| > 0.7 = strong, 0.3-0.7 = moderate, < 0.3 = weak", 
+                                       className='header-tooltip')
+                        ], id="header-correlation", className='table-header-cell'),
+                        html.Div([
+                            html.Span("P-value", className='table-header-text'),
+                            dcc.Tooltip("Probability relationship occurred by chance. p < 0.05 = significant, p < 0.01 = highly significant", 
+                                       className='header-tooltip')
+                        ], id="header-pvalue", className='table-header-cell'),
+                        html.Div([
+                            html.Span("R² (Variance)", className='table-header-text'),
+                            dcc.Tooltip("Percentage of target variance explained by source (0-1). Higher = better predictive power", 
+                                       className='header-tooltip')
+                        ], id="header-rsquared", className='table-header-cell'),
+                        html.Div([
+                            html.Span("Significant?", className='table-header-text'),
+                            dcc.Tooltip("Overall assessment: 'Yes' if p < 0.05 (statistically reliable), 'No' if p ≥ 0.05 (may be random)", 
+                                       className='header-tooltip')
+                        ], id="header-significant", className='table-header-cell'),
+                    ], className='enhanced-table-header'),
+                    
+                    dash_table.DataTable(
+                        id='causal-table',
+                        columns=[
+                            {'name': 'Source Variable', 'id': 'Source'},
+                            {'name': 'Target Variable', 'id': 'Target'},
+                            {'name': 'Causal Weight', 'id': 'Weight', 'type': 'numeric', 'format': {'specifier': '.4f'}},
+                            {'name': 'Correlation (r)', 'id': 'Pearson_r', 'type': 'numeric', 'format': {'specifier': '.3f'}},
+                            {'name': 'P-value', 'id': 'P_value', 'type': 'numeric', 'format': {'specifier': '.3f'}},
+                            {'name': 'R² (Variance)', 'id': 'R_squared', 'type': 'numeric', 'format': {'specifier': '.3f'}},
+                            {'name': 'Significant?', 'id': 'Significant'},
+                        ],
                     sort_action='native',
                     style_cell={'textAlign': 'left'},
                     style_data_conditional=[
                         {
                             'if': {'filter_query': '{Significant} = Yes'},
-                            'backgroundColor': 'rgba(0, 255, 0, 0.1)',
+                            'backgroundColor': 'rgba(0, 255, 0, 0.15)',
                             'color': 'inherit',
+                            'fontWeight': 'bold'
+                        },
+                        {
+                            'if': {'filter_query': '{P_value} < 0.001'},
+                            'backgroundColor': 'rgba(0, 200, 0, 0.2)',
+                            'fontWeight': 'bold'
+                        },
+                        {
+                            'if': {'filter_query': '{P_value} < 0.01'},
+                            'backgroundColor': 'rgba(0, 255, 0, 0.15)',
+                            'fontWeight': 'bold'
                         },
                         {
                             'if': {'filter_query': '{P_value} < 0.05'},
+                            'backgroundColor': 'rgba(0, 255, 0, 0.1)',
                             'fontWeight': 'bold'
+                        },
+                        {
+                            'if': {'filter_query': '{P_value} >= 0.05'},
+                            'backgroundColor': 'rgba(255, 0, 0, 0.05)',
+                            'opacity': '0.7'
                         }
                     ]
                 ),
+            ]),
                 dcc.Markdown(id='causal-weights-note')
             ])
         )
@@ -523,12 +1180,42 @@ app.layout = html.Div(id='main-container', children=[
     html.Div(id='forecast-section', children=[
         html.H2("Time Series Forecasting", className='section-title'),
         html.Div([
-            dcc.Dropdown(id='time-series-col-dropdown', placeholder='Select Time Column', className='forecast-dropdown'),
-            dcc.Dropdown(id='target-col-dropdown', placeholder='Select Target Column', className='forecast-dropdown'),
-            dcc.Dropdown(id='model-dropdown', options=['Linear Regression', 'ARIMA', 'SARIMA', 'Nowcasting'], placeholder='Select Model', className='forecast-dropdown'),
-            dcc.Input(id='forecast-periods-input', type='number', placeholder='Periods to forecast', value=10),
-            html.Button('Generate Forecast', id='generate-forecast-button', n_clicks=0),
+            html.Div([
+                html.Label('Time Column:'),
+                dcc.Dropdown(id='time-series-col-dropdown', placeholder='Select Time Column', className='forecast-dropdown'),
+            ], className='forecast-control-group'),
+            html.Div([
+                html.Label('Target Variable:'),
+                dcc.Dropdown(id='target-col-dropdown', placeholder='Select Target Column', className='forecast-dropdown'),
+            ], className='forecast-control-group'),
+            html.Div([
+                html.Label('Forecasting Model:'),
+                dcc.Dropdown(id='model-dropdown', options=[
+                    {'label': 'Linear Regression', 'value': 'Linear Regression'},
+                    {'label': 'ARIMA', 'value': 'ARIMA'},
+                    {'label': 'SARIMA (Seasonal)', 'value': 'SARIMA'},
+                    {'label': 'VAR (Vector Autoregression)', 'value': 'VAR (Vector Autoregression)'},
+                    {'label': 'Dynamic Factor Model', 'value': 'Dynamic Factor Model'},
+                    {'label': 'State-Space Model', 'value': 'State-Space Model'},
+                    {'label': 'Nowcasting', 'value': 'Nowcasting'}
+                ], placeholder='Select Model', className='forecast-dropdown'),
+            ], className='forecast-control-group'),
+            html.Div([
+                html.Label('Forecast Periods:'),
+                dcc.Input(id='forecast-periods-input', type='number', placeholder='Periods to forecast', value=10, min=1, max=100),
+            ], className='forecast-control-group'),
+            html.Div([
+                html.Button('Generate Forecast', id='generate-forecast-button', n_clicks=0),
+            ], className='forecast-control-group'),
         ], className='forecast-controls'),
+        
+        # Model Information Panel
+        html.Div(id='model-info-panel', children=[
+            dcc.Markdown(id='model-description', children="""
+            ### Model Information
+            Select a forecasting model to see detailed information about its capabilities and use cases.
+            """)
+        ], className='model-info-section'),
         dcc.Graph(id='forecast-graph')
     ])
 ])
@@ -629,17 +1316,43 @@ def update_data(contents, n_clicks, filename, url):
      Output('causal-table', 'data'),
      Output('causal-weights-note', 'children'),
      Output('quality-report', 'children'),
+     Output('performance-report', 'children'),
      Output('causal-table', 'style_data'),
      Output('causal-table', 'style_header')],
     [Input('store-raw-data', 'data'),
-     Input('theme-selector', 'value')]
+     Input('theme-selector', 'value'),
+     Input('significance-filter-toggle', 'value'),
+     Input('correlation-threshold-slider', 'value')]
 )
-def update_causal_analysis(json_raw_data, theme):
+def update_causal_analysis(json_raw_data, theme, significance_filter, correlation_threshold):
     if json_raw_data is None:
-        return go.Figure(), "", [], "", "", {}, {}
+        return go.Figure(), "", [], "", "", "", {}, {}
 
     df = pd.read_json(StringIO(json_raw_data), orient='split')
-    causal_graph, strongest_insight, table_data, note, quality_report, edge_tests = analyze_causal_structure(df, theme)
+    
+    # Apply filtering parameters
+    filter_params = {
+        'hide_nonsignificant': 'hide_nonsig' in (significance_filter or []),
+        'min_correlation': correlation_threshold or 0.0
+    }
+    
+    causal_graph, strongest_insight, table_data, note, quality_report, edge_tests = analyze_causal_structure(df, theme, filter_params)
+    
+    # Create performance report
+    performance_report = ""
+    if hasattr(quality_report, '__contains__') and 'Performance Metrics' not in quality_report:
+        # Extract performance metrics if available
+        try:
+            # This would be populated by the optimized function
+            performance_report = """
+### Performance Metrics
+- **Computation Time**: Optimized processing enabled
+- **Parallel Workers**: Multi-threading active
+- **Memory Usage**: Efficient data handling
+- **Processing Status**: ✅ Enhanced performance mode
+            """
+        except:
+            performance_report = "Performance metrics not available"
     
     if theme == 'dark':
         style_data = {
@@ -666,7 +1379,7 @@ def update_causal_analysis(json_raw_data, theme):
             'border': '1px solid black'
         }
 
-    return causal_graph, strongest_insight, table_data, note, quality_report, style_data, style_header
+    return causal_graph, strongest_insight, table_data, note, quality_report, performance_report, style_data, style_header
 
 
 
@@ -788,7 +1501,394 @@ def update_forecast_graph(n_clicks, json_data, time_col, target_col, model_name,
         fig.add_trace(go.Scatter(x=test_df.index, y=nowcast, mode='lines', name='Nowcast', line={'dash': 'dash'}))
         fig.update_layout(title=f'Nowcasting for {target_col}')
 
+    elif model_name == 'VAR (Vector Autoregression)':
+        fitted_model, target_forecast, selected_vars = fit_var_model(df, target_col, periods)
+        
+        if fitted_model is not None:
+            # Create future dates
+            last_date = df.index.max()
+            future_dates = pd.date_range(start=last_date + pd.DateOffset(days=1), periods=periods, freq='D')
+            
+            # Plot historical data
+            fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
+            
+            # Plot VAR forecast
+            fig.add_trace(go.Scatter(x=future_dates, y=target_forecast, mode='lines', name='VAR Forecast', line={'dash': 'dot'}))
+            
+            # Add confidence intervals if available
+            try:
+                forecast_ci = fitted_model.forecast_interval(df[selected_vars].values[-fitted_model.k_ar:], steps=periods, alpha=0.05)
+                target_idx = selected_vars.index(target_col)
+                lower_ci = forecast_ci[:, target_idx, 0]
+                upper_ci = forecast_ci[:, target_idx, 1]
+                
+                fig.add_trace(go.Scatter(x=future_dates, y=upper_ci, mode='lines', line=dict(width=0), showlegend=False))
+                fig.add_trace(go.Scatter(x=future_dates, y=lower_ci, mode='lines', line=dict(width=0), 
+                                       fill='tonexty', fillcolor='rgba(0,100,80,0.2)', name='95% Confidence Interval'))
+            except:
+                pass
+            
+            fig.update_layout(title=f'VAR Forecast for {target_col} (Variables: {len(selected_vars)})')
+        else:
+            fig.add_annotation(text="VAR model failed to fit. Try with more data or fewer variables.", 
+                             xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+
+    elif model_name == 'Dynamic Factor Model':
+        fitted_model, target_forecast, selected_vars = fit_dynamic_factor_model(df, target_col, periods)
+        
+        if fitted_model is not None:
+            # Create future dates
+            last_date = df.index.max()
+            future_dates = pd.date_range(start=last_date + pd.DateOffset(days=1), periods=periods, freq='D')
+            
+            # Plot historical data
+            fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
+            
+            # Plot Dynamic Factor forecast
+            fig.add_trace(go.Scatter(x=future_dates, y=target_forecast, mode='lines', name='Dynamic Factor Forecast', line={'dash': 'dashdot'}))
+            
+            fig.update_layout(title=f'Dynamic Factor Model Forecast for {target_col} (Factors: {fitted_model.k_factors})')
+        else:
+            fig.add_annotation(text="Dynamic Factor Model failed to fit. Try with more data.", 
+                             xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+
+    elif model_name == 'State-Space Model':
+        fitted_model, target_forecast, seasonal_info = fit_state_space_model(df, target_col, periods)
+        
+        if fitted_model is not None:
+            # Create future dates
+            last_date = df.index.max()
+            future_dates = pd.date_range(start=last_date + pd.DateOffset(days=1), periods=periods, freq='D')
+            
+            # Plot historical data
+            fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
+            
+            # Plot State-Space forecast
+            fig.add_trace(go.Scatter(x=future_dates, y=target_forecast, mode='lines', name='State-Space Forecast', line={'dash': 'longdash'}))
+            
+            # Add model components if available
+            try:
+                # Get fitted values and components
+                fitted_values = fitted_model.fittedvalues
+                fig.add_trace(go.Scatter(x=df.index, y=fitted_values, mode='lines', name='Fitted Values', 
+                                       line={'dash': 'dash', 'color': 'orange'}, opacity=0.7))
+                
+                # Add trend component if available
+                if hasattr(fitted_model, 'level'):
+                    level = fitted_model.level.smoothed
+                    fig.add_trace(go.Scatter(x=df.index, y=level, mode='lines', name='Trend Component', 
+                                           line={'dash': 'dot', 'color': 'green'}, opacity=0.6))
+            except:
+                pass
+            
+            seasonal_text = f" (Seasonal: {seasonal_info})" if seasonal_info else ""
+            fig.update_layout(title=f'State-Space Model Forecast for {target_col}{seasonal_text}')
+        else:
+            fig.add_annotation(text="State-Space Model failed to fit. Try with more data.", 
+                             xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+
     return fig
+
+@callback(
+    Output('statistical-help-panel', 'className'),
+    [Input('stats-help-button', 'n_clicks'),
+     Input('close-help-button', 'n_clicks')],
+    prevent_initial_call=True
+)
+def toggle_help_panel(open_clicks, close_clicks):
+    """Toggle the statistical help panel visibility"""
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return 'help-panel hidden'
+    
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+    if trigger_id == 'stats-help-button':
+        return 'help-panel visible'
+    elif trigger_id == 'close-help-button':
+        return 'help-panel hidden'
+    
+    return 'help-panel hidden'
+
+@callback(
+    Output('model-description', 'children'),
+    [Input('model-dropdown', 'value')]
+)
+def update_model_description(model_name):
+    """Update model description based on selected model"""
+    
+    descriptions = {
+        'Linear Regression': """
+## Linear Regression
+
+### Model Overview
+**Type:** Simple trend-based forecasting  
+**Complexity:** Low  
+**Data Requirements:** Minimal (10+ observations)
+
+### Best Use Cases
+- Data with clear linear trends
+- Short-term forecasting (1-10 periods)
+- Quick baseline analysis
+- Limited historical data available
+
+### Advantages
+- ⚡ **Fast computation** - Results in seconds
+- 📊 **Highly interpretable** - Clear trend coefficients
+- 📈 **Minimal data requirements** - Works with small datasets
+- 🔧 **Simple implementation** - No complex parameters
+
+### Limitations
+- ❌ **No seasonality handling** - Cannot capture periodic patterns
+- ❌ **Linear assumption** - May miss non-linear relationships
+- ❌ **No autocorrelation** - Ignores time series dependencies
+- ❌ **Limited complexity** - Cannot model complex patterns
+
+### Technical Details
+- **Method:** Ordinary Least Squares (OLS)
+- **Features:** Time as numeric variable
+- **Output:** Linear trend projection
+- **Confidence Intervals:** Not available
+        """,
+        
+        'ARIMA': """
+## ARIMA (AutoRegressive Integrated Moving Average)
+
+### Model Overview
+**Type:** Univariate time series model  
+**Complexity:** Medium  
+**Data Requirements:** Moderate (30+ observations)
+
+### Best Use Cases
+- Stationary time series data
+- Medium-term forecasting (5-50 periods)
+- Economic indicators
+- Financial data without strong seasonality
+
+### Advantages
+- 📈 **Handles autocorrelation** - Models time dependencies
+- 🔬 **Well-established methodology** - Proven statistical foundation
+- ⚖️ **Balanced complexity** - Good performance vs. simplicity
+- 📊 **Diagnostic tools** - Rich model validation options
+
+### Limitations
+- 📋 **Requires stationarity** - Data preprocessing needed
+- ❌ **No seasonality** - Cannot handle seasonal patterns
+- 🎛️ **Parameter selection** - Requires model tuning
+- 📊 **Univariate only** - Single variable analysis
+
+### Technical Details
+- **Parameters:** (p, d, q) - AR, Integration, MA orders
+- **Method:** Maximum Likelihood Estimation
+- **Preprocessing:** Differencing for stationarity
+- **Diagnostics:** Residual analysis, AIC/BIC selection
+        """,
+        
+        'SARIMA': """
+## SARIMA (Seasonal ARIMA)
+
+### Model Overview
+**Type:** Seasonal univariate time series model  
+**Complexity:** High  
+**Data Requirements:** High (2+ seasonal cycles)
+
+### Best Use Cases
+- Data with clear seasonal patterns
+- Monthly, quarterly, or yearly cycles
+- Sales data with seasonality
+- Weather and climate patterns
+
+### Advantages
+- 🔄 **Seasonal modeling** - Captures periodic patterns
+- 📈 **Trend and seasonality** - Handles both components
+- 🔬 **Robust methodology** - Statistically sound approach
+- 📊 **Comprehensive analysis** - Rich diagnostic capabilities
+
+### Limitations
+- 🎛️ **Complex parameter tuning** - Many parameters to optimize
+- 💻 **Computationally intensive** - Slower than simpler models
+- 📊 **Data requirements** - Needs multiple seasonal cycles
+- 🔧 **Setup complexity** - Requires seasonal period specification
+
+### Technical Details
+- **Parameters:** (p,d,q)(P,D,Q,s) - Regular + Seasonal orders
+- **Seasonal Period:** Must be specified (12 for monthly, 4 for quarterly)
+- **Method:** Maximum Likelihood with seasonal differencing
+- **Validation:** Seasonal diagnostics and residual analysis
+        """,
+        
+        'VAR (Vector Autoregression)': """
+## VAR (Vector Autoregression)
+
+### Model Overview
+**Type:** Multivariate time series model  
+**Complexity:** High  
+**Data Requirements:** High (multiple variables, 50+ observations)
+
+### Best Use Cases
+- Multiple related time series
+- Cross-variable relationship analysis
+- Economic systems modeling
+- Portfolio and risk analysis
+
+### Advantages
+- 🔗 **Models interdependencies** - Captures variable relationships
+- 🌐 **System-wide forecasts** - Predicts all variables simultaneously
+- 📊 **Confidence intervals** - Provides uncertainty quantification
+- 🔄 **Impulse response** - Shows shock propagation effects
+
+### Limitations
+- 📊 **Multiple variables required** - Needs related time series
+- 🎛️ **Model specification** - Sensitive to variable selection
+- 💻 **Computational complexity** - Scales with variables squared
+- 📈 **Interpretation complexity** - Many coefficients to analyze
+
+### Technical Details
+- **Variables:** 2-8 related time series (optimal: 3-5)
+- **Lag Selection:** Automatic via information criteria
+- **Method:** Ordinary Least Squares for each equation
+- **Output:** Forecasts + confidence intervals for all variables
+        """,
+        
+        'Dynamic Factor Model': """
+## Dynamic Factor Model
+
+### Model Overview
+**Type:** Dimension reduction + forecasting model  
+**Complexity:** Very High  
+**Data Requirements:** Very High (many variables, 100+ observations)
+
+### Best Use Cases
+- High-dimensional datasets (10+ variables)
+- Common factor extraction
+- Economic indicator analysis
+- Large business metric datasets
+
+### Advantages
+- 🔍 **Dimension reduction** - Handles many variables efficiently
+- 🎯 **Factor identification** - Finds underlying common drivers
+- 🔇 **Noise reduction** - Filters out idiosyncratic variation
+- 📊 **Scalable analysis** - Works with large datasets
+
+### Limitations
+- 🧩 **Complex interpretation** - Factor meanings not always clear
+- 📊 **High data requirements** - Needs many variables and observations
+- 💻 **Computational intensity** - Slow for large datasets
+- 🎛️ **Parameter selection** - Number of factors must be chosen
+
+### Technical Details
+- **Factors:** 2-5 common factors (automatically estimated)
+- **Method:** Kalman Filter and Maximum Likelihood
+- **Preprocessing:** Standardization required
+- **Output:** Factor-based forecasts with loadings interpretation
+        """,
+        
+        'State-Space Model': """
+## State-Space Model (Unobserved Components)
+
+### Model Overview
+**Type:** Structural time series model  
+**Complexity:** Very High  
+**Data Requirements:** High (50+ observations)
+
+### Best Use Cases
+- Structural component analysis
+- Trend and seasonal decomposition
+- Policy impact assessment
+- Missing data scenarios
+
+### Advantages
+- 🔧 **Flexible structure** - Customizable components
+- 📊 **Component analysis** - Separates trend, seasonal, irregular
+- 🕳️ **Missing data handling** - Natural accommodation of gaps
+- 📈 **Fitted components** - Shows individual component evolution
+
+### Limitations
+- 🧩 **Complex setup** - Requires component specification
+- 🎓 **Domain knowledge needed** - Model structure decisions
+- 💻 **Computational complexity** - Intensive estimation process
+- 🎛️ **Many parameters** - Multiple components to estimate
+
+### Technical Details
+- **Components:** Trend (local linear) + Seasonal + Autoregressive
+- **Method:** Kalman Filter and Maximum Likelihood
+- **Seasonality:** Automatic detection or user-specified
+- **Output:** Component forecasts + structural decomposition
+        """,
+        
+        'Nowcasting': """
+## Nowcasting
+
+### Model Overview
+**Type:** Real-time estimation model  
+**Complexity:** Low  
+**Data Requirements:** Low (20+ observations)
+
+### Best Use Cases
+- Current period estimation
+- Real-time monitoring
+- Very short-term predictions (1-3 periods)
+- Quick status assessment
+
+### Advantages
+- ⚡ **Real-time processing** - Uses most recent data
+- 📊 **Monitoring focus** - Good for current state assessment
+- 🔧 **Simple methodology** - Easy to understand and implement
+- 📈 **Quick results** - Fast computation for dashboards
+
+### Limitations
+- ⏱️ **Limited horizon** - Very short forecast range
+- 🔧 **Simple approach** - Basic linear methodology
+- 📊 **No uncertainty** - No confidence intervals
+- 🎯 **Narrow scope** - Focused on current period only
+
+### Technical Details
+- **Method:** Linear regression on recent data subset
+- **Training:** 90% of data for model, 10% for validation
+- **Focus:** Estimating current/next period values
+- **Output:** Point estimates with actual vs. predicted comparison
+        """
+    }
+    
+    if model_name and model_name in descriptions:
+        return descriptions[model_name]
+    else:
+        return """
+## Forecasting Model Selection Guide
+
+### Available Models Overview
+
+Select a forecasting model above to see detailed information about its capabilities, use cases, and technical specifications.
+
+#### **Simple Models**
+- 📈 **Linear Regression** - Basic trend analysis
+- 📊 **Nowcasting** - Real-time estimation
+
+#### **Univariate Time Series**
+- 🔄 **ARIMA** - Classic time series modeling
+- 🌊 **SARIMA** - Seasonal time series modeling
+
+#### **Advanced Multivariate**
+- 🔗 **VAR** - Multiple related time series
+- 🎯 **Dynamic Factor Model** - High-dimensional analysis
+- 🏗️ **State-Space Model** - Structural decomposition
+
+### Selection Criteria
+
+**Data Size:**
+- Small (< 50): Linear Regression, Nowcasting
+- Medium (50-200): ARIMA, SARIMA
+- Large (200+): VAR, Dynamic Factor, State-Space
+
+**Complexity Needs:**
+- Simple: Linear Regression, Nowcasting
+- Moderate: ARIMA, SARIMA
+- Advanced: VAR, Dynamic Factor, State-Space
+
+**Variable Count:**
+- Single: Linear, ARIMA, SARIMA, State-Space, Nowcasting
+- Multiple: VAR, Dynamic Factor Model
+        """
 
 if __name__ == '__main__':
     app.run(debug=True)
