@@ -13,6 +13,7 @@ from io import StringIO, BytesIO
 import dash
 from dash import dcc, html, Input, Output, State, callback, dash_table
 import networkx as nx
+import dash_cytoscape as cyto
 
 import matplotlib
 matplotlib.use('Agg')
@@ -311,7 +312,6 @@ def filter_by_timespan(data_frame, timespan_selector):
 
 
 
-
 def evaluate_model_quality_optimized(df, sm, max_workers=None):
     """
     Optimized evaluation of causal model quality with multiprocessing
@@ -563,8 +563,8 @@ def analyze_causal_structure_optimized(df, theme='dark', max_workers=None, filte
     df_numeric = df_numeric.dropna()
     
     if df_numeric.shape[1] < 2:
-        return go.Figure(), "", [], "", "", []
-    
+        return [], [], "", [], "", "", []
+
     # Limit number of variables for performance (CausalNex can be slow with many variables)
     if df_numeric.shape[1] > 15:
         # Select most correlated variables
@@ -587,8 +587,8 @@ def analyze_causal_structure_optimized(df, theme='dark', max_workers=None, filte
     except Exception as e:
         print(f"Structure learning failed: {e}")
         # Return empty results if structure learning fails
-        return go.Figure(), f"Structure learning failed: {str(e)}", [], "", "", []
-    
+        return [], [], f"Structure learning failed: {str(e)}", [], "", "", []
+
     # Evaluate model quality with optimization
     quality_metrics = evaluate_model_quality_optimized(df_numeric, sm, max_workers)
     quality_report, edge_tests = create_quality_report(quality_metrics, theme)
@@ -626,131 +626,109 @@ def analyze_causal_structure_optimized(df, theme='dark', max_workers=None, filte
         
         # Remove isolated nodes
         nodes_to_remove = [node for node in filtered_sm.nodes() if node not in nodes_with_edges]
-        filtered_sm.remove_nodes_from(nodes_to_remove)
+        if nodes_to_remove:
+            filtered_sm.remove_nodes_from(nodes_to_remove)
         
         sm = filtered_sm
-    
-    pos = nx.spring_layout(sm, seed=42)
 
-    edge_traces = []
-    all_edges = sm.edges(data=True)
-    max_abs_weight = max([abs(data.get('weight', 0)) for u, v, data in all_edges], default=1)
+    # Create elements for Dash Cytoscape
+    cy_elements = []
+    for node in sm.nodes():
+        cy_elements.append({
+            'data': {'id': node, 'label': node},
+            'grabbable': True,
+            'selectable': True,
+            'locked': False
+        })
 
-    for u, v, data in all_edges:
-        x0, y0 = pos[u]
-        x1, y1 = pos[v]
+    max_abs_weight = max([abs(data.get('weight', 0)) for u, v, data in sm.edges(data=True)], default=1)
+
+    for u, v, data in sm.edges(data=True):
         weight = data.get('weight', 0)
-        
         norm_weight = abs(weight) / max_abs_weight if max_abs_weight != 0 else 0
         
-        width = 1 + norm_weight * 5
-        
-        # Color edges based on statistical significance if available
         edge_test = next((test for test in edge_tests if test['source'] == u and test['target'] == v), None)
+        
+        edge_data = {
+            'source': u,
+            'target': v,
+            'weight': f'{weight:.4f}',
+            'width': 1 + norm_weight * 5
+        }
+
+        classes = []
         if edge_test and edge_test['significant']:
-            # Significant edges in green/red based on weight direction
             if weight > 0:
-                color = f'rgba(0, 255, 0, {0.3 + norm_weight * 0.7})'  # Green for positive significant
+                classes.append('significant-positive')
             else:
-                color = f'rgba(255, 100, 0, {0.3 + norm_weight * 0.7})'  # Orange for negative significant
+                classes.append('significant-negative')
         else:
-            # Non-significant or untested edges in blue/red
             if weight > 0:
-                color = f'rgba(0, 0, 255, {0.2 + norm_weight * 0.5})'
+                classes.append('nonsignificant-positive')
             else:
-                color = f'rgba(255, 0, 0, {0.2 + norm_weight * 0.5})'
+                classes.append('nonsignificant-negative')
 
-        # Enhanced hover text with statistical info
-        custom_data = [weight]
-        hovertemplate = '<b>Connection Status</b><br><br>Weight: %{customdata[0]:.4f}'
         if edge_test:
-            custom_data.extend([
-                edge_test["pearson_r"],
-                edge_test["pearson_p"],
-                edge_test["r_squared"],
-                "Yes" if edge_test["significant"] else "No"
-            ])
-            hovertemplate += '<br>Pearson r: %{customdata[1]:.3f}'
-            hovertemplate += '<br>P-value: %{customdata[2]:.3f}'
-            hovertemplate += '<br>R²: %{customdata[3]:.3f}'
-            hovertemplate += '<br>Significant: %{customdata[4]}'
-        
-        hovertemplate += '<extra></extra>'
+            edge_data.update({
+                'pearson_r': f'{edge_test["pearson_r"]:.3f}',
+                'p_value': f'{edge_test["pearson_p"]:.3f}',
+                'r_squared': f'{edge_test["r_squared"]:.3f}',
+                'significant': "Yes" if edge_test["significant"] else "No"
+            })
 
-        edge_trace = go.Scatter(
-            x=[x0, x1, None], y=[y0, y1, None],
-            line=dict(width=width, color=color),
-            customdata=[custom_data] * 2, # Duplicate for both points of the line
-            hovertemplate=hovertemplate,
-            mode='lines',
-            showlegend=False
-        )
-        edge_traces.append(edge_trace)
+        cy_elements.append({'data': edge_data, 'classes': ' '.join(classes)})
 
-    node_x = []
-    node_y = []
-    node_text = []
-    node_hover = []
-    for node in sm.nodes():
-        x, y = pos[node]
-        node_x.append(x)
-        node_y.append(y)
-        node_text.append(node)
-        
-        # Add node statistics to hover
-        in_degree = sm.in_degree(node)
-        out_degree = sm.out_degree(node)
-        node_hover.append(f'{node}<br>Parents: {in_degree}<br>Children: {out_degree}')
-
-    node_trace = go.Scatter(
-        x=node_x, y=node_y,
-        mode='markers+text',
-        text=node_text,
-        hovertext=node_hover,
-        hoverinfo='text',
-        textposition="top center",
-        marker=dict(
-            showscale=False,
-            color='lightblue',
-            size=20,
-            line_width=2))
-
-    # Create dummy traces for legend
-    legend_traces = [
-        go.Scatter(x=[None], y=[None], mode='lines', name='Significant (Positive)',
-                   line=dict(color=f'rgba(0, 255, 0, 0.7)', width=5)),
-        go.Scatter(x=[None], y=[None], mode='lines', name='Significant (Negative)',
-                   line=dict(color=f'rgba(255, 100, 0, 0.7)', width=5)),
-        go.Scatter(x=[None], y=[None], mode='lines', name='Non-Significant (Positive)',
-                   line=dict(color=f'rgba(0, 0, 255, 0.5)', width=5)),
-        go.Scatter(x=[None], y=[None], mode='lines', name='Non-Significant (Negative)',
-                   line=dict(color=f'rgba(255, 0, 0, 0.5)', width=5))
+    stylesheet = [
+        {
+            'selector': 'node',
+            'style': {
+                'background-color': 'lightblue',
+                'label': 'data(label)',
+                'color': '#000',
+                'text-outline-color': 'lightblue',
+                'text-outline-width': 1,
+                'font-size': '12px',
+                'width': 'label',
+                'height': 'label',
+                'padding': '10px'
+            }
+        },
+        {
+            'selector': 'edge',
+            'style': {
+                'curve-style': 'bezier',
+                'target-arrow-shape': 'triangle',
+                'width': 'data(width)'
+            }
+        },
+        {
+            'selector': '.significant-positive',
+            'style': { 'line-color': '#2ECC40', 'target-arrow-color': '#2ECC40' }
+        },
+        {
+            'selector': '.significant-negative',
+            'style': { 'line-color': '#FF851B', 'target-arrow-color': '#FF851B' }
+        },
+        {
+            'selector': '.nonsignificant-positive',
+            'style': { 'line-color': '#0074D9', 'target-arrow-color': '#0074D9' }
+        },
+        {
+            'selector': '.nonsignificant-negative',
+            'style': { 'line-color': '#FF4136', 'target-arrow-color': '#FF4136' }
+        },
+        {
+            'selector': ':selected',
+            'style': {
+                'border-width': 2,
+                'border-color': 'black'
+            }
+        }
     ]
-
-    fig = go.Figure(data=edge_traces + [node_trace] + legend_traces,
-                 layout=go.Layout(
-                    showlegend=True,
-                    legend=dict(
-                        x=0.99,
-                        y=0.01,
-                        xanchor='right',
-                        yanchor='bottom',
-                        bgcolor='rgba(255, 255, 255, 0.5)' if theme == 'light' else 'rgba(0, 0, 0, 0.5)',
-                        font=dict(
-                            color='black' if theme == 'light' else 'white'
-                        )
-                    ),
-                    hovermode='closest',
-                    margin=dict(b=20,l=5,r=5,t=40),
-                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)))
     
-    template = 'plotly_dark' if theme == 'dark' else 'plotly_white'
-    fig.update_layout(template=template, title="CausalNex Analysis with Quality Metrics")
-
     strongest_edge = None
     max_weight = 0
-    for u, v, data in all_edges:
+    for u, v, data in sm.edges(data=True):
         weight_abs = abs(data.get('weight', 0))
         if weight_abs > max_weight:
             max_weight = weight_abs
@@ -789,7 +767,7 @@ def analyze_causal_structure_optimized(df, theme='dark', max_workers=None, filte
     if filter_params:
         active_filters = []
         if filter_params.get('hide_nonsignificant', False):
-            active_filters.append("🎯 **Hiding non-significant edges** (p ≥ 0.05)")
+            active_filters.append("🎯 **Hiding non-significant edges** (p \u2265 0.05)")
         if filter_params.get('min_correlation', 0.0) > 0:
             active_filters.append(f"📊 **Minimum correlation threshold**: {filter_params.get('min_correlation', 0.0):.1f}")
         
@@ -805,7 +783,7 @@ def analyze_causal_structure_optimized(df, theme='dark', max_workers=None, filte
 ### **Quick Reference Guide**
 
 **Interactive Filtering:**
-- 🎯 **Significance Filter**: Hide relationships with p ≥ 0.05 to focus on reliable connections
+- 🎯 **Significance Filter**: Hide relationships with p \u2265 0.05 to focus on reliable connections
 - 📊 **Correlation Threshold**: Set minimum correlation strength to reduce noise
 - **Dynamic Updates**: Graph and table update automatically with filter changes
 
@@ -829,9 +807,9 @@ def analyze_causal_structure_optimized(df, theme='dark', max_workers=None, filte
 - ⭐⭐⭐ **p < 0.001**: Highly significant (very strong evidence)
 - ⭐⭐ **p < 0.01**: Significant (strong evidence)  
 - ⭐ **p < 0.05**: Significant (moderate evidence)
-- ❌ **p ≥ 0.05**: Not significant (insufficient evidence)
+- ❌ **p \u2265 0.05**: Not significant (insufficient evidence)
 """
-    return fig, strongest_insight_md, table_data, note_md, quality_report, edge_tests
+    return cy_elements, stylesheet, strongest_insight_md, table_data, note_md, quality_report, edge_tests
 
 # Backward compatibility wrapper
 def analyze_causal_structure(df, theme='dark', filter_params=None):
@@ -840,7 +818,7 @@ def analyze_causal_structure(df, theme='dark', filter_params=None):
 
 
 
-app = dash.Dash(__name__)
+app = dash.Dash(__name__, external_scripts=['https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js'])
 
 app.layout = html.Div(id='main-container', children=[
     html.H1("Dynamic Data Analysis Dashboard", id='h1-title'),
@@ -922,7 +900,7 @@ app.layout = html.Div(id='main-container', children=[
                 html.Label("🎯 Focus on Significant Relationships:", className='toggle-label'),
                 dcc.Checklist(
                     id='significance-filter-toggle',
-                    options=[{'label': ' Hide non-significant edges (p ≥ 0.05)', 'value': 'hide_nonsig'}],
+                    options=[{'label': ' Hide non-significant edges (p \u2265 0.05)', 'value': 'hide_nonsig'}],
                     value=[],
                     className='significance-toggle'
                 )
@@ -946,7 +924,20 @@ app.layout = html.Div(id='main-container', children=[
             id="loading-causal-analysis",
             type="default",
             children=html.Div([
-                dcc.Graph(id='causal-graph'),
+                html.Div(style={'width': '100%'}, children=[
+                    cyto.Cytoscape(
+                        id='causal-graph',
+                        layout={'name': 'dagre', 'spacingFactor': 1.2},
+                        style={'width': '100%', 'height': '600px'},
+                        elements=[],
+                        stylesheet=[],
+                        userZoomingEnabled=True,
+                        userPanningEnabled=True,
+                        boxSelectionEnabled=True,
+                        minZoom=0.5,
+                        maxZoom=2
+                    )
+                ]),
                 dcc.Markdown(id='strongest-causal-insight'),
                 html.Div(id='model-quality-section', children=[
                     html.H3("Model Quality Evaluation", className='section-title'),
@@ -987,11 +978,11 @@ app.layout = html.Div(id='main-container', children=[
                                 ], className='threshold-item'),
                                 html.Div([
                                     html.Span("Moderate: ", className='threshold-label'),
-                                    html.Span("0.2 < |Weight| ≤ 0.5", className='threshold-value moderate'),
+                                    html.Span("0.2 < |Weight| \u2264 0.5", className='threshold-value moderate'),
                                 ], className='threshold-item'),
                                 html.Div([
                                     html.Span("Weak: ", className='threshold-label'),
-                                    html.Span("|Weight| ≤ 0.2", className='threshold-value weak'),
+                                    html.Span("|Weight| \u2264 0.2", className='threshold-value weak'),
                                 ], className='threshold-item'),
                             ], className='metric-card'),
                             
@@ -1005,11 +996,11 @@ app.layout = html.Div(id='main-container', children=[
                                 ], className='threshold-item'),
                                 html.Div([
                                     html.Span("Moderate: ", className='threshold-label'),
-                                    html.Span("0.3 < |r| ≤ 0.7", className='threshold-value moderate'),
+                                    html.Span("0.3 < |r| \u2264 0.7", className='threshold-value moderate'),
                                 ], className='threshold-item'),
                                 html.Div([
                                     html.Span("Weak: ", className='threshold-label'),
-                                    html.Span("|r| ≤ 0.3", className='threshold-value weak'),
+                                    html.Span("|r| \u2264 0.3", className='threshold-value weak'),
                                 ], className='threshold-item'),
                             ], className='metric-card'),
                             
@@ -1027,7 +1018,7 @@ app.layout = html.Div(id='main-container', children=[
                                 ], className='threshold-item'),
                                 html.Div([
                                     html.Span("Not Sig: ", className='threshold-label'),
-                                    html.Span("p ≥ 0.05", className='threshold-value weak'),
+                                    html.Span("p \u2265 0.05", className='threshold-value weak'),
                                 ], className='threshold-item'),
                             ], className='metric-card'),
                             
@@ -1041,11 +1032,11 @@ app.layout = html.Div(id='main-container', children=[
                                 ], className='threshold-item'),
                                 html.Div([
                                     html.Span("Good: ", className='threshold-label'),
-                                    html.Span("0.25 < R² ≤ 0.75", className='threshold-value moderate'),
+                                    html.Span("0.25 < R² \u2264 0.75", className='threshold-value moderate'),
                                 ], className='threshold-item'),
                                 html.Div([
                                     html.Span("Poor: ", className='threshold-label'),
-                                    html.Span("R² ≤ 0.25", className='threshold-value weak'),
+                                    html.Span("R² \u2264 0.25", className='threshold-value weak'),
                                 ], className='threshold-item'),
                             ], className='metric-card'),
                         ], className='metric-cards-grid'),
@@ -1070,7 +1061,7 @@ app.layout = html.Div(id='main-container', children=[
 Use these combined criteria to evaluate relationship reliability:
 - **High Quality**: p < 0.01 AND |r| > 0.5 AND R² > 0.25
 - **Moderate Quality**: p < 0.05 AND |r| > 0.3 AND R² > 0.10
-- **Low Quality**: p ≥ 0.05 OR |r| < 0.3 OR R² < 0.10
+- **Low Quality**: p \u2265 0.05 OR |r| < 0.3 OR R² < 0.10
 
 ### Decision Making Guidelines
 
@@ -1090,7 +1081,7 @@ Use these combined criteria to evaluate relationship reliability:
                         html.Span("🟢 Highly Significant (p < 0.001)", className='legend-item legend-high'),
                         html.Span("🟢 Significant (p < 0.01)", className='legend-item legend-medium'),  
                         html.Span("🟢 Moderately Significant (p < 0.05)", className='legend-item legend-low'),
-                        html.Span("🔴 Not Significant (p ≥ 0.05)", className='legend-item legend-none'),
+                        html.Span("🔴 Not Significant (p \u2265 0.05)", className='legend-item legend-none'),
                     ], className='legend-container')
                 ], className='table-legend'),
                 
@@ -1291,7 +1282,8 @@ def update_data(contents, n_clicks, filename, url):
     return processed_data_json, raw_data_json, axis_options, axis_options, color_options, date_cols, numeric_cols
 
 @callback(
-    [Output('causal-graph', 'figure'),
+    [Output('causal-graph', 'elements'),
+     Output('causal-graph', 'stylesheet'),
      Output('strongest-causal-insight', 'children'),
      Output('causal-table', 'data'),
      Output('causal-weights-note', 'children'),
@@ -1306,7 +1298,7 @@ def update_data(contents, n_clicks, filename, url):
 )
 def update_causal_analysis(json_raw_data, theme, significance_filter, correlation_threshold):
     if json_raw_data is None:
-        return go.Figure(), "", [], "", "", "", {}, {}
+        return [], [], "", [], "", "", "", {}, {}
 
     df = pd.read_json(StringIO(json_raw_data), orient='split')
     
@@ -1316,7 +1308,7 @@ def update_causal_analysis(json_raw_data, theme, significance_filter, correlatio
         'min_correlation': correlation_threshold or 0.0
     }
     
-    causal_graph, strongest_insight, table_data, note, quality_report, edge_tests = analyze_causal_structure(df, theme, filter_params)
+    elements, stylesheet, strongest_insight, table_data, note, quality_report, edge_tests = analyze_causal_structure(df, theme, filter_params)
     
     # Create performance report
     performance_report = ""
@@ -1359,7 +1351,7 @@ def update_causal_analysis(json_raw_data, theme, significance_filter, correlatio
             'border': '1px solid black'
         }
 
-    return causal_graph, strongest_insight, table_data, note, quality_report, performance_report, style_data, style_header
+    return elements, stylesheet, strongest_insight, table_data, note, quality_report, performance_report, style_data, style_header
 
 
 
@@ -1541,7 +1533,7 @@ def update_forecast_graph(n_clicks, json_data, time_col, target_cols, model_name
             model.fit(df[['time_numeric']], df[target_col])
             
             last_date = df.index.max()
-            future_dates = pd.to_datetime([last_date + pd.DateOffset(days=i) for i in range(1, periods + 1)])
+            future_dates = pd.to_datetime([last_date + pd.DateOffset(days=1) for i in range(1, periods + 1)])
             future_numeric = (future_dates - df.index.min()).days
             
             forecast = model.predict(future_numeric.values.reshape(-1, 1))
@@ -1772,7 +1764,7 @@ def update_model_description(model_name):
 - **Factors:** 2-5 common factors (automatically estimated)
 - **Method:** Kalman Filter and Maximum Likelihood
 - **Preprocessing:** Standardization required
-- **Output:** Factor-based forecasts with loadings interpretation
+- **Output:** Factor-based forecasts + loadings interpretation
         """,
         
         'State-Space Model': """
