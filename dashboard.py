@@ -152,155 +152,128 @@ def cached_structure_learning(data_hash: str, data_shape: Tuple) -> Any:
     # This is a placeholder - actual caching would need serialization
     return None
 
-def fit_var_model(df, target_col, periods, max_lags=5):
+def fit_var_model(df, target_cols, periods, max_lags=5):
     """
-    Fit Vector Autoregression (VAR) model for multivariate forecasting
+    Fit Vector Autoregression (VAR) model for multivariate forecasting.
+    Handles single or multiple target variables.
     """
     try:
-        # Select numeric columns for VAR (multivariate analysis)
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         
-        # Ensure target column is included and limit to reasonable number of variables
-        if target_col not in numeric_cols:
-            return None, None, "Target column not numeric"
+        if not all(col in numeric_cols for col in target_cols):
+            return None, None, "One or more target columns are not numeric."
         
         # Limit to 5-8 variables for computational efficiency
         if len(numeric_cols) > 8:
-            # Include target and most correlated variables
-            corr_with_target = df[numeric_cols].corrwith(df[target_col]).abs().sort_values(ascending=False)
+            # Calculate correlation with the mean of target variables
+            corr_with_target = df[numeric_cols].corrwith(df[target_cols].mean(axis=1)).abs().sort_values(ascending=False)
             selected_vars = corr_with_target.head(8).index.tolist()
+            # Ensure target columns are in the selected variables
+            for col in target_cols:
+                if col not in selected_vars:
+                    selected_vars.append(col)
         else:
             selected_vars = numeric_cols
         
-        # Prepare data for VAR
         var_data = df[selected_vars].dropna()
         
         if len(var_data) < max_lags * 2:
-            return None, None, "Insufficient data for VAR model"
+            return None, None, "Insufficient data for VAR model."
         
-        # Fit VAR model
         model = VAR(var_data)
-        
-        # Select optimal lag order (up to max_lags)
         lag_order = model.select_order(maxlags=min(max_lags, len(var_data)//4))
         optimal_lags = lag_order.aic
-        
         fitted_model = model.fit(optimal_lags)
         
-        # Generate forecast
         forecast = fitted_model.forecast(var_data.values[-optimal_lags:], steps=periods)
         
-        # Extract target variable forecast
-        target_idx = selected_vars.index(target_col)
-        target_forecast = forecast[:, target_idx]
-        
-        return fitted_model, target_forecast, selected_vars
+        target_forecasts = {}
+        for i, col in enumerate(selected_vars):
+            if col in target_cols:
+                target_forecasts[col] = forecast[:, i]
+            
+        return fitted_model, target_forecasts, selected_vars
         
     except Exception as e:
         return None, None, f"VAR model error: {str(e)}"
 
-def fit_dynamic_factor_model(df, target_col, periods, n_factors=2):
+def fit_dynamic_factor_model(df, target_cols, periods, n_factors=2):
     """
-    Fit Dynamic Factor Model for dimension reduction and forecasting
+    Fit Dynamic Factor Model for dimension reduction and forecasting.
+    Handles single or multiple target variables.
     """
     try:
-        # Select numeric columns
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         
-        if target_col not in numeric_cols:
-            return None, None, "Target column not numeric"
-        
-        # Limit variables for computational efficiency
+        if not all(col in numeric_cols for col in target_cols):
+            return None, None, "One or more target columns are not numeric."
+            
         if len(numeric_cols) > 10:
-            corr_with_target = df[numeric_cols].corrwith(df[target_col]).abs().sort_values(ascending=False)
+            corr_with_target = df[numeric_cols].corrwith(df[target_cols].mean(axis=1)).abs().sort_values(ascending=False)
             selected_vars = corr_with_target.head(10).index.tolist()
+            for col in target_cols:
+                if col not in selected_vars:
+                    selected_vars.append(col)
         else:
             selected_vars = numeric_cols
         
-        # Prepare data
         factor_data = df[selected_vars].dropna()
         
         if len(factor_data) < 50:
-            return None, None, "Insufficient data for Dynamic Factor Model"
+            return None, None, "Insufficient data for Dynamic Factor Model."
         
-        # Standardize data for factor analysis
         from sklearn.preprocessing import StandardScaler
         scaler = StandardScaler()
         scaled_data = scaler.fit_transform(factor_data)
         scaled_df = pd.DataFrame(scaled_data, columns=selected_vars, index=factor_data.index)
         
-        # Fit Dynamic Factor Model
         n_factors = min(n_factors, len(selected_vars)//2)
         model = DynamicFactor(scaled_df, k_factors=n_factors, factor_order=2)
         fitted_model = model.fit(disp=False, maxiter=100)
         
-        # Generate forecast
-        forecast = fitted_model.forecast(steps=periods)
+        forecast_scaled = fitted_model.forecast(steps=periods)
         
-        # Transform back to original scale
-        target_idx = selected_vars.index(target_col)
-        target_forecast_scaled = forecast[:, target_idx]
+        forecast = scaler.inverse_transform(forecast_scaled)
         
-        # Inverse transform for target variable
-        dummy_data = np.zeros((periods, len(selected_vars)))
-        dummy_data[:, target_idx] = target_forecast_scaled
-        target_forecast = scaler.inverse_transform(dummy_data)[:, target_idx]
-        
-        return fitted_model, target_forecast, selected_vars
+        target_forecasts = {}
+        for i, col in enumerate(selected_vars):
+            if col in target_cols:
+                target_forecasts[col] = forecast[:, i]
+            
+        return fitted_model, target_forecasts, selected_vars
         
     except Exception as e:
         return None, None, f"Dynamic Factor Model error: {str(e)}"
 
-def fit_state_space_model(df, target_col, periods):
+def fit_state_space_model(df, target_cols, periods):
     """
-    Fit State-Space Model (Unobserved Components) for structural time series
+    Fit State-Space Model for each target variable.
     """
-    try:
-        # Prepare target series
-        target_series = df[target_col].dropna()
+    forecasts = {}
+    models = {}
+    
+    for col in target_cols:
+        try:
+            target_series = df[col].dropna()
+            
+            if len(target_series) < 20:
+                continue
+
+            # Simplified model configuration
+            model = UnobservedComponents(target_series, level='local linear trend', autoregressive=1)
+            fitted_model = model.fit(disp=False, maxiter=100)
+            
+            forecasts[col] = fitted_model.forecast(steps=periods)
+            models[col] = fitted_model
+        except Exception as e:
+            print(f"State-Space model for {col} failed: {e}")
+            continue
+            
+    if not forecasts:
+        return None, None, "State-Space models failed for all variables."
         
-        if len(target_series) < 20:
-            return None, None, "Insufficient data for State-Space Model"
-        
-        # Fit Unobserved Components model (Local Linear Trend + Seasonal)
-        # Detect seasonality
-        freq_map = {'D': 7, 'W': 52, 'M': 12, 'Q': 4, 'Y': 1}
-        inferred_freq = pd.infer_freq(target_series.index)
-        
-        if inferred_freq and inferred_freq[0] in freq_map:
-            seasonal_periods = freq_map[inferred_freq[0]]
-        else:
-            seasonal_periods = min(12, len(target_series)//4) if len(target_series) > 24 else None
-        
-        # Configure model components
-        if seasonal_periods and seasonal_periods > 1 and len(target_series) > seasonal_periods * 2:
-            model = UnobservedComponents(
-                target_series,
-                level='local linear trend',
-                seasonal=seasonal_periods,
-                cycle=False,
-                autoregressive=1
-            )
-        else:
-            model = UnobservedComponents(
-                target_series,
-                level='local linear trend',
-                seasonal=None,
-                cycle=False,
-                autoregressive=2
-            )
-        
-        # Fit model
-        fitted_model = model.fit(disp=False, maxiter=100)
-        
-        # Generate forecast
-        forecast_result = fitted_model.forecast(steps=periods)
-        target_forecast = forecast_result
-        
-        return fitted_model, target_forecast, seasonal_periods
-        
-    except Exception as e:
-        return None, None, f"State-Space Model error: {str(e)}"
+    # For simplicity, returning the last model for general info
+    return models, forecasts, None
 
 def process_data(df):
     for col in df.columns:
@@ -688,19 +661,30 @@ def analyze_causal_structure_optimized(df, theme='dark', max_workers=None, filte
                 color = f'rgba(255, 0, 0, {0.2 + norm_weight * 0.5})'
 
         # Enhanced hover text with statistical info
-        hover_text = f'Weight: {weight:.4f}'
+        custom_data = [weight]
+        hovertemplate = '<b>Connection Status</b><br><br>Weight: %{customdata[0]:.4f}'
         if edge_test:
-            hover_text += f'<br>Pearson r: {edge_test["pearson_r"]:.3f}'
-            hover_text += f'<br>P-value: {edge_test["pearson_p"]:.3f}'
-            hover_text += f'<br>R²: {edge_test["r_squared"]:.3f}'
-            hover_text += f'<br>Significant: {"Yes" if edge_test["significant"] else "No"}'
+            custom_data.extend([
+                edge_test["pearson_r"],
+                edge_test["pearson_p"],
+                edge_test["r_squared"],
+                "Yes" if edge_test["significant"] else "No"
+            ])
+            hovertemplate += '<br>Pearson r: %{customdata[1]:.3f}'
+            hovertemplate += '<br>P-value: %{customdata[2]:.3f}'
+            hovertemplate += '<br>R²: %{customdata[3]:.3f}'
+            hovertemplate += '<br>Significant: %{customdata[4]}'
+        
+        hovertemplate += '<extra></extra>'
 
         edge_trace = go.Scatter(
             x=[x0, x1, None], y=[y0, y1, None],
             line=dict(width=width, color=color),
-            hoverinfo='text',
-            text=hover_text,
-            mode='lines')
+            customdata=[custom_data] * 2, # Duplicate for both points of the line
+            hovertemplate=hovertemplate,
+            mode='lines',
+            showlegend=False
+        )
         edge_traces.append(edge_trace)
 
     node_x = []
@@ -731,9 +715,31 @@ def analyze_causal_structure_optimized(df, theme='dark', max_workers=None, filte
             size=20,
             line_width=2))
 
-    fig = go.Figure(data=edge_traces + [node_trace],
+    # Create dummy traces for legend
+    legend_traces = [
+        go.Scatter(x=[None], y=[None], mode='lines', name='Significant (Positive)',
+                   line=dict(color=f'rgba(0, 255, 0, 0.7)', width=5)),
+        go.Scatter(x=[None], y=[None], mode='lines', name='Significant (Negative)',
+                   line=dict(color=f'rgba(255, 100, 0, 0.7)', width=5)),
+        go.Scatter(x=[None], y=[None], mode='lines', name='Non-Significant (Positive)',
+                   line=dict(color=f'rgba(0, 0, 255, 0.5)', width=5)),
+        go.Scatter(x=[None], y=[None], mode='lines', name='Non-Significant (Negative)',
+                   line=dict(color=f'rgba(255, 0, 0, 0.5)', width=5))
+    ]
+
+    fig = go.Figure(data=edge_traces + [node_trace] + legend_traces,
                  layout=go.Layout(
-                    showlegend=False,
+                    showlegend=True,
+                    legend=dict(
+                        x=0.99,
+                        y=0.01,
+                        xanchor='right',
+                        yanchor='bottom',
+                        bgcolor='rgba(255, 255, 255, 0.5)' if theme == 'light' else 'rgba(0, 0, 0, 0.5)',
+                        font=dict(
+                            color='black' if theme == 'light' else 'white'
+                        )
+                    ),
                     hovermode='closest',
                     margin=dict(b=20,l=5,r=5,t=40),
                     xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
@@ -1090,45 +1096,6 @@ Use these combined criteria to evaluate relationship reliability:
                 
                 # Enhanced Table with Tooltips
                 html.Div([
-                    # Table Header with Tooltips
-                    html.Div([
-                        html.Div([
-                            html.Span("Source Variable", className='table-header-text'),
-                            dcc.Tooltip("The variable that potentially causes changes in the target variable", 
-                                       className='header-tooltip')
-                        ], id="header-source", className='table-header-cell'),
-                        html.Div([
-                            html.Span("Target Variable", className='table-header-text'),
-                            dcc.Tooltip("The variable that is potentially affected by changes in the source variable", 
-                                       className='header-tooltip')
-                        ], id="header-target", className='table-header-cell'),
-                        html.Div([
-                            html.Span("Causal Weight", className='table-header-text'),
-                            dcc.Tooltip("Estimated causal effect strength. Positive = same direction, Negative = opposite direction. Larger absolute values = stronger effects.", 
-                                       className='header-tooltip')
-                        ], id="header-weight", className='table-header-cell'),
-                        html.Div([
-                            html.Span("Correlation (r)", className='table-header-text'),
-                            dcc.Tooltip("Linear relationship strength (-1 to +1). |r| > 0.7 = strong, 0.3-0.7 = moderate, < 0.3 = weak", 
-                                       className='header-tooltip')
-                        ], id="header-correlation", className='table-header-cell'),
-                        html.Div([
-                            html.Span("P-value", className='table-header-text'),
-                            dcc.Tooltip("Probability relationship occurred by chance. p < 0.05 = significant, p < 0.01 = highly significant", 
-                                       className='header-tooltip')
-                        ], id="header-pvalue", className='table-header-cell'),
-                        html.Div([
-                            html.Span("R² (Variance)", className='table-header-text'),
-                            dcc.Tooltip("Percentage of target variance explained by source (0-1). Higher = better predictive power", 
-                                       className='header-tooltip')
-                        ], id="header-rsquared", className='table-header-cell'),
-                        html.Div([
-                            html.Span("Significant?", className='table-header-text'),
-                            dcc.Tooltip("Overall assessment: 'Yes' if p < 0.05 (statistically reliable), 'No' if p ≥ 0.05 (may be random)", 
-                                       className='header-tooltip')
-                        ], id="header-significant", className='table-header-cell'),
-                    ], className='enhanced-table-header'),
-                    
                     dash_table.DataTable(
                         id='causal-table',
                         columns=[
@@ -1140,6 +1107,15 @@ Use these combined criteria to evaluate relationship reliability:
                             {'name': 'R² (Variance)', 'id': 'R_squared', 'type': 'numeric', 'format': {'specifier': '.3f'}},
                             {'name': 'Significant?', 'id': 'Significant'},
                         ],
+                        tooltip_header={
+                            'Source': 'The variable that potentially causes changes in the target variable.',
+                            'Target': 'The variable that is potentially affected by changes in the source variable.',
+                            'Weight': 'Estimated causal effect strength. Positive = same direction, Negative = opposite direction. Larger absolute values = stronger effects.',
+                            'Pearson_r': 'Linear relationship strength (-1 to +1). |r| > 0.7 = strong, 0.3-0.7 = moderate, < 0.3 = weak.',
+                            'P_value': 'Probability relationship occurred by chance. p < 0.05 = significant, p < 0.01 = highly significant.',
+                            'R_squared': 'Percentage of target variance explained by source (0-1). Higher = better predictive power.',
+                            'Significant': "Overall assessment: 'Yes' if p < 0.05 (statistically reliable), 'No' if p >= 0.05 (may be random)."
+                        },
                     sort_action='native',
                     style_cell={'textAlign': 'left'},
                     style_data_conditional=[
@@ -1185,8 +1161,8 @@ Use these combined criteria to evaluate relationship reliability:
                 dcc.Dropdown(id='time-series-col-dropdown', placeholder='Select Time Column', className='forecast-dropdown'),
             ], className='forecast-control-group'),
             html.Div([
-                html.Label('Target Variable:'),
-                dcc.Dropdown(id='target-col-dropdown', placeholder='Select Target Column', className='forecast-dropdown'),
+                html.Label('Target Variable(s):'),
+                dcc.Dropdown(id='target-col-dropdown', placeholder='Select one or more target columns', multi=True, className='forecast-dropdown'),
             ], className='forecast-control-group'),
             html.Div([
                 html.Label('Forecasting Model:'),
@@ -1216,7 +1192,11 @@ Use these combined criteria to evaluate relationship reliability:
             Select a forecasting model to see detailed information about its capabilities and use cases.
             """)
         ], className='model-info-section'),
-        dcc.Graph(id='forecast-graph')
+        dcc.Loading(
+            id="loading-forecast",
+            type="default",
+            children=dcc.Graph(id='forecast-graph')
+        )
     ])
 ])
 
@@ -1445,8 +1425,8 @@ def update_graphs(json_processed_data, x_axis, y_axis, color, timespan, chart_ty
      State('forecast-periods-input', 'value'),
      State('theme-selector', 'value')]
 )
-def update_forecast_graph(n_clicks, json_data, time_col, target_col, model_name, periods, theme):
-    if n_clicks == 0 or not all([json_data, time_col, target_col, model_name, periods]):
+def update_forecast_graph(n_clicks, json_data, time_col, target_cols, model_name, periods, theme):
+    if n_clicks == 0 or not all([json_data, time_col, target_cols, model_name, periods]):
         return go.Figure()
 
     df = pd.read_json(StringIO(json_data), orient='split')
@@ -1455,137 +1435,149 @@ def update_forecast_graph(n_clicks, json_data, time_col, target_col, model_name,
 
     fig = go.Figure()
     template = 'plotly_dark' if theme == 'dark' else 'plotly_white'
-    fig.update_layout(template=template, title=f'{model_name} Forecast for {target_col}')
+    fig.update_layout(template=template, title=f'{model_name} Forecast')
 
-    if model_name == 'Linear Regression':
-        df['time_numeric'] = (df.index - df.index.min()).days
-        model = LinearRegression()
-        model.fit(df[['time_numeric']], df[target_col])
-        
-        last_date = df.index.max()
-        future_dates = pd.to_datetime([last_date + pd.DateOffset(days=i) for i in range(1, periods + 1)])
-        future_numeric = (future_dates - df.index.min()).days
-        
-        forecast = model.predict(future_numeric.values.reshape(-1, 1))
-        fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
-        fig.add_trace(go.Scatter(x=future_dates, y=forecast, mode='lines', name='Forecast'))
+    colors = px.colors.qualitative.Plotly
 
-    elif model_name == 'ARIMA':
-        model = ARIMA(df[target_col], order=(5,1,0))
-        fitted_model = model.fit()
-        forecast = fitted_model.forecast(steps=periods)
-        fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
-        fig.add_trace(go.Scatter(x=forecast.index, y=forecast.values, mode='lines', name='Forecast'))
+    if model_name == 'VAR (Vector Autoregression)':
+        if len(target_cols) < 2:
+            fig.add_annotation(text="Please select at least two columns for VAR model.",
+                             xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            return fig
 
-    elif model_name == 'SARIMA':
-        model = SARIMAX(df[target_col], order=(5,1,0), seasonal_order=(1,1,1,12))
-        fitted_model = model.fit(disp=False)
-        forecast = fitted_model.forecast(steps=periods)
-        fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
-        fig.add_trace(go.Scatter(x=forecast.index, y=forecast.values, mode='lines', name='Forecast'))
+        fitted_model, forecasts, returned_vars = fit_var_model(df, target_cols, periods)
 
-    elif model_name == 'Nowcasting':
-        split_point = int(len(df) * 0.9)
-        train_df = df.iloc[:split_point]
-        test_df = df.iloc[split_point:]
-
-        train_df.loc[:, 'time_numeric'] = (train_df.index - df.index.min()).days
-        model = LinearRegression()
-        model.fit(train_df[['time_numeric']], train_df[target_col])
-        
-        test_df.loc[:, 'time_numeric'] = (test_df.index - df.index.min()).days
-        nowcast = model.predict(test_df[['time_numeric']])
-        
-        fig.add_trace(go.Scatter(x=train_df.index, y=train_df[target_col], mode='lines', name='Training Data'))
-        fig.add_trace(go.Scatter(x=test_df.index, y=test_df[target_col], mode='lines', name='Actual Values'))
-        fig.add_trace(go.Scatter(x=test_df.index, y=nowcast, mode='lines', name='Nowcast', line={'dash': 'dash'}))
-        fig.update_layout(title=f'Nowcasting for {target_col}')
-
-    elif model_name == 'VAR (Vector Autoregression)':
-        fitted_model, target_forecast, selected_vars = fit_var_model(df, target_col, periods)
-        
-        if fitted_model is not None:
-            # Create future dates
+        if fitted_model and forecasts:
             last_date = df.index.max()
             future_dates = pd.date_range(start=last_date + pd.DateOffset(days=1), periods=periods, freq='D')
+            var_data = df[returned_vars].dropna()
             
-            # Plot historical data
-            fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
-            
-            # Plot VAR forecast
-            fig.add_trace(go.Scatter(x=future_dates, y=target_forecast, mode='lines', name='VAR Forecast', line={'dash': 'dot'}))
-            
-            # Add confidence intervals if available
             try:
-                forecast_ci = fitted_model.forecast_interval(df[selected_vars].values[-fitted_model.k_ar:], steps=periods, alpha=0.05)
-                target_idx = selected_vars.index(target_col)
-                lower_ci = forecast_ci[:, target_idx, 0]
-                upper_ci = forecast_ci[:, target_idx, 1]
+                _, lower, upper = fitted_model.forecast_interval(var_data.values[-fitted_model.k_ar:], steps=periods, alpha=0.05)
+            except Exception as e:
+                print(f"Could not generate confidence intervals: {e}")
+                lower, upper = None, None
+
+            for i, col in enumerate(target_cols):
+                color = colors[i % len(colors)]
                 
-                fig.add_trace(go.Scatter(x=future_dates, y=upper_ci, mode='lines', line=dict(width=0), showlegend=False))
-                fig.add_trace(go.Scatter(x=future_dates, y=lower_ci, mode='lines', line=dict(width=0), 
-                                       fill='tonexty', fillcolor='rgba(0,100,80,0.2)', name='95% Confidence Interval'))
-            except:
-                pass
-            
-            fig.update_layout(title=f'VAR Forecast for {target_col} (Variables: {len(selected_vars)})')
+                # Handle both hex and rgb color formats
+                if color.startswith('#'):
+                    color_hex = color.lstrip('#')
+                    r, g, b = tuple(int(color_hex[j:j+2], 16) for j in (0, 2, 4))
+                    fill_color = f'rgba({r}, {g}, {b}, 0.2)'
+                else:
+                    fill_color = f"rgba({color.split('(')[1].split(')')[0]}, 0.2)"
+
+                fig.add_trace(go.Scatter(x=df.index, y=df[col], mode='lines', name=f'Historical {col}', line=dict(color=color)))
+                fig.add_trace(go.Scatter(x=future_dates, y=forecasts[col], mode='lines', name=f'Forecast {col}', line=dict(color=color, dash='dot')))
+                
+                if lower is not None and upper is not None:
+                    col_idx = returned_vars.index(col)
+                    lower_ci = lower[:, col_idx]
+                    upper_ci = upper[:, col_idx]
+                    fig.add_trace(go.Scatter(x=future_dates, y=upper_ci, mode='lines', line=dict(width=0), showlegend=False))
+                    fig.add_trace(go.Scatter(x=future_dates, y=lower_ci, mode='lines', line=dict(width=0), 
+                                           fill='tonexty', fillcolor=fill_color, 
+                                           name=f'95% CI {col}'))
+
+            fig.update_layout(title=f'{model_name} Forecast for {", ".join(target_cols)}')
         else:
             fig.add_annotation(text="VAR model failed to fit. Try with more data or fewer variables.", 
                              xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
 
     elif model_name == 'Dynamic Factor Model':
-        fitted_model, target_forecast, selected_vars = fit_dynamic_factor_model(df, target_col, periods)
+        if len(target_cols) < 2:
+            fig.add_annotation(text="Please select at least two columns for Dynamic Factor Model.",
+                             xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            return fig
+            
+        fitted_model, forecasts, returned_vars = fit_dynamic_factor_model(df, target_cols, periods)
         
-        if fitted_model is not None:
-            # Create future dates
+        if fitted_model and forecasts:
             last_date = df.index.max()
             future_dates = pd.date_range(start=last_date + pd.DateOffset(days=1), periods=periods, freq='D')
+
+            for i, col in enumerate(target_cols):
+                color = colors[i % len(colors)]
+                fig.add_trace(go.Scatter(x=df.index, y=df[col], mode='lines', name=f'Historical {col}', line=dict(color=color)))
+                fig.add_trace(go.Scatter(x=future_dates, y=forecasts[col], mode='lines', name=f'Forecast {col}', line=dict(color=color, dash='dashdot')))
             
-            # Plot historical data
-            fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
-            
-            # Plot Dynamic Factor forecast
-            fig.add_trace(go.Scatter(x=future_dates, y=target_forecast, mode='lines', name='Dynamic Factor Forecast', line={'dash': 'dashdot'}))
-            
-            fig.update_layout(title=f'Dynamic Factor Model Forecast for {target_col} (Factors: {fitted_model.k_factors})')
+            fig.update_layout(title=f'Dynamic Factor Model Forecast for {", ".join(target_cols)}')
         else:
             fig.add_annotation(text="Dynamic Factor Model failed to fit. Try with more data.", 
                              xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
 
     elif model_name == 'State-Space Model':
-        fitted_model, target_forecast, seasonal_info = fit_state_space_model(df, target_col, periods)
-        
-        if fitted_model is not None:
-            # Create future dates
+        with ProcessPoolExecutor() as executor:
+            futures = {executor.submit(fit_state_space_model, df, [col], periods): col for col in target_cols}
+            
             last_date = df.index.max()
             future_dates = pd.date_range(start=last_date + pd.DateOffset(days=1), periods=periods, freq='D')
-            
-            # Plot historical data
-            fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
-            
-            # Plot State-Space forecast
-            fig.add_trace(go.Scatter(x=future_dates, y=target_forecast, mode='lines', name='State-Space Forecast', line={'dash': 'longdash'}))
-            
-            # Add model components if available
-            try:
-                # Get fitted values and components
-                fitted_values = fitted_model.fittedvalues
-                fig.add_trace(go.Scatter(x=df.index, y=fitted_values, mode='lines', name='Fitted Values', 
-                                       line={'dash': 'dash', 'color': 'orange'}, opacity=0.7))
-                
-                # Add trend component if available
-                if hasattr(fitted_model, 'level'):
-                    level = fitted_model.level.smoothed
-                    fig.add_trace(go.Scatter(x=df.index, y=level, mode='lines', name='Trend Component', 
-                                           line={'dash': 'dot', 'color': 'green'}, opacity=0.6))
-            except:
-                pass
-            
-            seasonal_text = f" (Seasonal: {seasonal_info})" if seasonal_info else ""
-            fig.update_layout(title=f'State-Space Model Forecast for {target_col}{seasonal_text}')
+
+            for i, future in enumerate(as_completed(futures)):
+                col = futures[future]
+                models, forecasts, _ = future.result()
+                if models and forecasts:
+                    color = colors[i % len(colors)]
+                    fig.add_trace(go.Scatter(x=df.index, y=df[col], mode='lines', name=f'Historical {col}', line=dict(color=color)))
+                    fig.add_trace(go.Scatter(x=future_dates, y=forecasts[col], mode='lines', name=f'Forecast {col}', line=dict(color=color, dash='longdash')))
+
+        fig.update_layout(title=f'State-Space Model Forecast for {", ".join(target_cols)}')
+
+    else: # Handling for single-target models
+        if isinstance(target_cols, list):
+            if len(target_cols) > 1:
+                fig.add_annotation(text=f"{model_name} supports only a single target variable.",
+                                 xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+                return fig
+            target_col = target_cols[0]
         else:
-            fig.add_annotation(text="State-Space Model failed to fit. Try with more data.", 
-                             xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            target_col = target_cols
+
+        if model_name == 'Linear Regression':
+            df['time_numeric'] = (df.index - df.index.min()).days
+            model = LinearRegression()
+            model.fit(df[['time_numeric']], df[target_col])
+            
+            last_date = df.index.max()
+            future_dates = pd.to_datetime([last_date + pd.DateOffset(days=i) for i in range(1, periods + 1)])
+            future_numeric = (future_dates - df.index.min()).days
+            
+            forecast = model.predict(future_numeric.values.reshape(-1, 1))
+            fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
+            fig.add_trace(go.Scatter(x=future_dates, y=forecast, mode='lines', name='Forecast'))
+
+        elif model_name == 'ARIMA':
+            model = ARIMA(df[target_col], order=(5,1,0))
+            fitted_model = model.fit()
+            forecast = fitted_model.forecast(steps=periods)
+            fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
+            fig.add_trace(go.Scatter(x=forecast.index, y=forecast.values, mode='lines', name='Forecast'))
+
+        elif model_name == 'SARIMA':
+            model = SARIMAX(df[target_col], order=(5,1,0), seasonal_order=(1,1,1,12))
+            fitted_model = model.fit(disp=False)
+            forecast = fitted_model.forecast(steps=periods)
+            fig.add_trace(go.Scatter(x=df.index, y=df[target_col], mode='lines', name='Historical Data'))
+            fig.add_trace(go.Scatter(x=forecast.index, y=forecast.values, mode='lines', name='Forecast'))
+
+        elif model_name == 'Nowcasting':
+            split_point = int(len(df) * 0.9)
+            train_df = df.iloc[:split_point]
+            test_df = df.iloc[split_point:]
+
+            train_df.loc[:, 'time_numeric'] = (train_df.index - df.index.min()).days
+            model = LinearRegression()
+            model.fit(train_df[['time_numeric']], train_df[target_col])
+            
+            test_df.loc[:, 'time_numeric'] = (test_df.index - df.index.min()).days
+            nowcast = model.predict(test_df[['time_numeric']])
+            
+            fig.add_trace(go.Scatter(x=train_df.index, y=train_df[target_col], mode='lines', name='Training Data'))
+            fig.add_trace(go.Scatter(x=test_df.index, y=test_df[target_col], mode='lines', name='Actual Values'))
+            fig.add_trace(go.Scatter(x=test_df.index, y=nowcast, mode='lines', name='Nowcast', line={'dash': 'dash'}))
+            fig.update_layout(title=f'Nowcasting for {target_col}')
 
     return fig
 
