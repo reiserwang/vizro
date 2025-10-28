@@ -223,6 +223,16 @@ def create_visualization(x_axis, y_axis, color_var, chart_type, theme, y_axis_ag
     try:
         df = current_data.copy()
         
+        # Handle date columns - convert string dates to datetime
+        if x_axis in df.columns:
+            if x_axis.lower() in ['date', 'time', 'timestamp'] or 'date' in x_axis.lower():
+                if not pd.api.types.is_datetime64_any_dtype(df[x_axis]):
+                    try:
+                        df[x_axis] = pd.to_datetime(df[x_axis], errors='coerce')
+                        print(f"✅ Converted {x_axis} to datetime for standard visualization")
+                    except Exception as e:
+                        print(f"⚠️ Could not convert {x_axis} to datetime: {e}")
+        
         # Apply Y-axis aggregation if requested
         if y_axis_agg != "Raw Data":
             if y_axis_agg == "Average":
@@ -296,6 +306,33 @@ def create_vizro_enhanced_visualization(x_axis, y_axis, color_var, chart_type, t
     try:
         df = current_data.copy()
         
+        # Handle date columns - convert string dates to datetime
+        def convert_date_columns(dataframe):
+            """Convert potential date columns to datetime"""
+            for col in dataframe.columns:
+                if col.lower() in ['date', 'time', 'timestamp'] or 'date' in col.lower():
+                    if not pd.api.types.is_datetime64_any_dtype(dataframe[col]):
+                        try:
+                            # Try to convert to datetime
+                            dataframe[col] = pd.to_datetime(dataframe[col], errors='coerce')
+                            print(f"✅ Converted {col} to datetime")
+                        except Exception as e:
+                            print(f"⚠️ Could not convert {col} to datetime: {e}")
+            return dataframe
+        
+        # Convert date columns
+        df = convert_date_columns(df)
+        
+        # For scatter plots and other charts, if x_axis is a date column, ensure it's properly handled
+        if x_axis in df.columns:
+            if x_axis.lower() in ['date', 'time', 'timestamp'] or 'date' in x_axis.lower():
+                if not pd.api.types.is_datetime64_any_dtype(df[x_axis]):
+                    try:
+                        df[x_axis] = pd.to_datetime(df[x_axis], errors='coerce')
+                        print(f"✅ Converted x-axis {x_axis} to datetime for visualization")
+                    except Exception as e:
+                        print(f"⚠️ Could not convert x-axis {x_axis} to datetime: {e}")
+        
         # Apply Y-axis aggregation if requested
         if y_axis_agg != "Raw Data":
             if y_axis_agg == "Average":
@@ -324,15 +361,48 @@ def create_vizro_enhanced_visualization(x_axis, y_axis, color_var, chart_type, t
         
         # Create enhanced Vizro-style visualizations
         if chart_type == 'Enhanced Scatter Plot':
-            # Advanced scatter plot with trend lines and marginal distributions
-            fig = px.scatter(df, x=x_axis, y=y_axis, color=color_var,
-                           title=f'Enhanced {chart_title_suffix} vs {x_axis}',
-                           template=template,
-                           marginal_x="histogram", marginal_y="histogram",
-                           trendline="ols",
-                           hover_data=[col for col in df.columns if col in [x_axis, y_axis, color_var]])
+            # Check if x_axis is datetime - adjust visualization accordingly
+            if pd.api.types.is_datetime64_any_dtype(df[x_axis]):
+                # For datetime x-axis, create time series scatter plot without marginal histograms
+                fig = px.scatter(df, x=x_axis, y=y_axis, color=color_var,
+                               title=f'Enhanced {chart_title_suffix} vs {x_axis}',
+                               template=template,
+                               hover_data=[col for col in df.columns if col in [x_axis, y_axis, color_var]])
+                
+                # Add trend line for datetime series if y is numeric
+                if df[y_axis].dtype in ['int64', 'float64']:
+                    # Convert datetime to numeric for trend calculation
+                    df_numeric = df.copy()
+                    df_numeric['x_numeric'] = pd.to_numeric(df_numeric[x_axis])
+                    
+                    # Calculate trend line
+                    from sklearn.linear_model import LinearRegression
+                    X = df_numeric['x_numeric'].values.reshape(-1, 1)
+                    y = df_numeric[y_axis].values
+                    
+                    # Remove NaN values
+                    mask = ~(np.isnan(X.flatten()) | np.isnan(y))
+                    if mask.sum() > 1:  # Need at least 2 points
+                        X_clean = X[mask]
+                        y_clean = y[mask]
+                        
+                        model = LinearRegression()
+                        model.fit(X_clean, y_clean)
+                        trend_y = model.predict(X)
+                        
+                        fig.add_scatter(x=df[x_axis], y=trend_y,
+                                      mode='lines', name='Trend Line',
+                                      line=dict(dash='dash', color='red'))
+            else:
+                # Advanced scatter plot with trend lines and marginal distributions for numeric x-axis
+                fig = px.scatter(df, x=x_axis, y=y_axis, color=color_var,
+                               title=f'Enhanced {chart_title_suffix} vs {x_axis}',
+                               template=template,
+                               marginal_x="histogram", marginal_y="histogram",
+                               trendline="ols",
+                               hover_data=[col for col in df.columns if col in [x_axis, y_axis, color_var]])
             
-            # Add correlation annotation
+            # Add correlation annotation (only for numeric variables)
             if df[x_axis].dtype in ['int64', 'float64'] and df[y_axis].dtype in ['int64', 'float64']:
                 corr = df[x_axis].corr(df[y_axis])
                 fig.add_annotation(
@@ -396,6 +466,9 @@ def create_vizro_enhanced_visualization(x_axis, y_axis, color_var, chart_type, t
             # X-axis distribution  
             if df[x_axis].dtype in ['int64', 'float64']:
                 fig.add_trace(go.Histogram(x=df[x_axis], name=x_axis, nbinsx=30), row=1, col=2)
+            elif pd.api.types.is_datetime64_any_dtype(df[x_axis]):
+                # For datetime data, show time series histogram
+                fig.add_trace(go.Histogram(x=df[x_axis], name=x_axis, nbinsx=20), row=1, col=2)
             else:
                 # For categorical data, show value counts
                 value_counts = df[x_axis].value_counts()
@@ -2323,43 +2396,157 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
         
         progress(0.5, desc="🧠 Creating Bayesian Network...")
         
-        # Discretize data for Bayesian Network with robust split points
-        def create_robust_split_points(series):
-            """Create monotonically increasing split points for discretization"""
-            min_val = series.min()
-            max_val = series.max()
+        # Enhanced robust discretization for Bayesian Network
+        def create_ultra_robust_split_points(series):
+            """Create guaranteed monotonically increasing split points"""
+            # Remove NaN values
+            clean_series = series.dropna()
+            
+            if len(clean_series) == 0:
+                return [0.0, 1.0]  # Default fallback
+            
+            min_val = float(clean_series.min())
+            max_val = float(clean_series.max())
             
             # If there's no variation, create artificial split points
-            if min_val == max_val:
-                return [min_val - 0.1, min_val + 0.1]
+            if min_val == max_val or abs(max_val - min_val) < 1e-10:
+                if min_val == 0:
+                    return [-0.5, 0.5]
+                else:
+                    margin = abs(min_val) * 0.1 if abs(min_val) > 1e-6 else 0.1
+                    return [min_val - margin, min_val + margin]
             
-            # Try quantile-based split points
-            q33 = series.quantile(0.33)
-            q67 = series.quantile(0.67)
+            # Calculate range and minimum separation
+            range_val = max_val - min_val
+            min_separation = max(range_val * 0.05, 1e-6)  # 5% of range or minimum threshold
             
-            # Ensure monotonic increasing with minimum separation
-            min_separation = (max_val - min_val) * 0.01  # 1% of range
+            # Try quantile-based split points first
+            try:
+                q25 = float(clean_series.quantile(0.25))
+                q50 = float(clean_series.quantile(0.50))
+                q75 = float(clean_series.quantile(0.75))
+                
+                # Check if quantiles provide sufficient separation
+                if (q50 - q25 >= min_separation) and (q75 - q50 >= min_separation):
+                    return [q25, q75]
+                elif (q75 - q25 >= min_separation):
+                    return [q25, q75]
+            except:
+                pass
             
-            if q67 - q33 < min_separation:
-                # If quantiles are too close, use evenly spaced points
-                range_val = max_val - min_val
-                split1 = min_val + range_val * 0.33
-                split2 = min_val + range_val * 0.67
-                return [split1, split2]
-            else:
-                return [q33, q67]
+            # Fallback to evenly spaced points
+            split1 = min_val + range_val * 0.33
+            split2 = min_val + range_val * 0.67
+            
+            # Ensure strict monotonic increasing
+            if split2 <= split1:
+                split2 = split1 + min_separation
+            
+            # Final validation
+            splits = [float(split1), float(split2)]
+            splits.sort()  # Ensure sorted order
+            
+            # Ensure minimum separation
+            if splits[1] - splits[0] < min_separation:
+                splits[1] = splits[0] + min_separation
+            
+            return splits
+        
+        # Validate data quality before discretization
+        progress(0.4, desc="🔍 Validating data quality...")
+        
+        # Check for sufficient variation in key variables
+        target_variation = df_numeric[target_var].std()
+        intervention_variation = df_numeric[intervention_var].std()
+        
+        if target_variation < 1e-10:
+            return f"""
+            ❌ Intervention analysis failed: Insufficient variation in target variable
+            
+            **Problem:** The target variable '{target_var}' has no variation (std = {target_variation:.2e})
+            
+            **Solutions:**
+            • Choose a different target variable with more diverse values
+            • Check if the data contains only constant values
+            • Ensure the variable represents a meaningful outcome
+            """, "Target variable has insufficient variation"
+        
+        if intervention_variation < 1e-10:
+            return f"""
+            ❌ Intervention analysis failed: Insufficient variation in intervention variable
+            
+            **Problem:** The intervention variable '{intervention_var}' has no variation (std = {intervention_variation:.2e})
+            
+            **Solutions:**
+            • Choose a different intervention variable with more diverse values
+            • Check if the data contains only constant values
+            • Ensure the variable can be meaningfully changed
+            """, "Intervention variable has insufficient variation"
         
         # Create split points for each column
         split_points = {}
         for col in df_numeric.columns:
-            split_points[col] = create_robust_split_points(df_numeric[col])
+            try:
+                splits = create_ultra_robust_split_points(df_numeric[col])
+                split_points[col] = splits
+                print(f"✅ Created split points for {col}: {splits}")
+            except Exception as e:
+                print(f"⚠️ Error creating split points for {col}: {e}")
+                # Fallback split points
+                min_val = float(df_numeric[col].min())
+                max_val = float(df_numeric[col].max())
+                if min_val == max_val:
+                    split_points[col] = [min_val - 0.1, min_val + 0.1]
+                else:
+                    range_val = max_val - min_val
+                    split_points[col] = [min_val + range_val * 0.4, min_val + range_val * 0.6]
         
-        discretiser = Discretiser(
-            method="fixed",
-            numeric_split_points=split_points
-        )
+        # Validate all split points are monotonic
+        for col, splits in split_points.items():
+            if len(splits) != 2 or splits[1] <= splits[0]:
+                print(f"⚠️ Invalid split points for {col}: {splits}, fixing...")
+                min_val = float(df_numeric[col].min())
+                max_val = float(df_numeric[col].max())
+                range_val = max(max_val - min_val, 1e-6)
+                split_points[col] = [min_val + range_val * 0.4, min_val + range_val * 0.6]
         
-        df_discretised = discretiser.transform(df_numeric)
+        try:
+            discretiser = Discretiser(
+                method="fixed",
+                numeric_split_points=split_points
+            )
+        except Exception as e:
+            return f"""
+            ❌ Intervention analysis failed: Discretization setup error
+            
+            **Problem:** Could not create discretizer: {str(e)}
+            
+            **Solutions:**
+            • Try with different variables that have more variation
+            • Ensure your data has at least 10+ unique values per variable
+            • Check for data quality issues (NaN, infinite values)
+            """, f"Discretization error: {str(e)}"
+        
+        # Apply discretization with error handling
+        try:
+            df_discretised = discretiser.transform(df_numeric)
+            print(f"✅ Successfully discretized data: {df_discretised.shape}")
+        except Exception as e:
+            return f"""
+            ❌ Intervention analysis failed: Data transformation error
+            
+            **Problem:** Could not discretize the data: {str(e)}
+            
+            **Solutions:**
+            • Check that your data contains valid numeric values
+            • Remove any infinite or extremely large values
+            • Ensure variables have reasonable ranges
+            • Try with a smaller subset of variables
+            
+            **Data info:**
+            • Target variable range: {df_numeric[target_var].min():.3f} to {df_numeric[target_var].max():.3f}
+            • Intervention variable range: {df_numeric[intervention_var].min():.3f} to {df_numeric[intervention_var].max():.3f}
+            """, f"Data transformation error: {str(e)}"
         
         # Create Bayesian Network
         bn = BayesianNetwork(sm)
@@ -2371,9 +2558,43 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
         # Create inference engine
         ie = InferenceEngine(bn)
         
-        # Discretize intervention value
-        intervention_discretised = discretiser.transform(pd.DataFrame({intervention_var: [intervention_value]}))
-        intervention_state = intervention_discretised[intervention_var].iloc[0]
+        # Validate and discretize intervention value
+        intervention_min = df_numeric[intervention_var].min()
+        intervention_max = df_numeric[intervention_var].max()
+        
+        # Check if intervention value is within reasonable range
+        if intervention_value < intervention_min * 0.5 or intervention_value > intervention_max * 2.0:
+            return f"""
+            ❌ Intervention analysis failed: Intervention value out of range
+            
+            **Problem:** Intervention value {intervention_value} is outside reasonable range
+            
+            **Data range for {intervention_var}:**
+            • Minimum: {intervention_min:.3f}
+            • Maximum: {intervention_max:.3f}
+            • Suggested range: {intervention_min:.3f} to {intervention_max:.3f}
+            
+            **Solutions:**
+            • Use an intervention value within the data range
+            • Try values between {intervention_min:.1f} and {intervention_max:.1f}
+            • Consider the practical meaning of your intervention
+            """, "Intervention value out of range"
+        
+        try:
+            intervention_discretised = discretiser.transform(pd.DataFrame({intervention_var: [intervention_value]}))
+            intervention_state = intervention_discretised[intervention_var].iloc[0]
+            print(f"✅ Intervention value {intervention_value} discretized to state: {intervention_state}")
+        except Exception as e:
+            return f"""
+            ❌ Intervention analysis failed: Could not discretize intervention value
+            
+            **Problem:** Error discretizing intervention value {intervention_value}: {str(e)}
+            
+            **Solutions:**
+            • Try an intervention value closer to the data mean: {df_numeric[intervention_var].mean():.3f}
+            • Ensure the value is a valid number
+            • Check that the value makes sense for your variable
+            """, f"Intervention discretization error: {str(e)}"
         
         # Perform intervention (do-calculus)
         intervention_query = ie.do_intervention(
