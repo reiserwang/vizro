@@ -622,8 +622,33 @@ def prepare_time_series_data(df, target_col, additional_cols=None):
         # Create a simple time index if none exists
         if not any(df.dtypes == 'datetime64[ns]'):
             df = df.copy()
-            df['time_index'] = pd.date_range(start='2020-01-01', periods=len(df), freq='M')
-            df = df.set_index('time_index')
+            
+            # Limit the number of periods to prevent timestamp overflow
+            max_periods = min(len(df), 10000)  # Limit to 10,000 periods max
+            
+            # Use daily frequency for smaller datasets, monthly for larger ones
+            if max_periods <= 1000:
+                freq = 'D'  # Daily
+                start_date = '2020-01-01'
+            elif max_periods <= 5000:
+                freq = 'W'  # Weekly
+                start_date = '2020-01-01'
+            else:
+                freq = 'M'  # Monthly
+                start_date = '2020-01-01'
+            
+            try:
+                # Create date range with safe limits
+                df['time_index'] = pd.date_range(
+                    start=start_date, 
+                    periods=max_periods, 
+                    freq=freq
+                )[:len(df)]  # Truncate to actual data length
+                df = df.set_index('time_index')
+            except (pd.errors.OutOfBoundsDatetime, OverflowError):
+                # Fallback: use simple integer index if date creation fails
+                df['time_index'] = range(len(df))
+                df = df.set_index('time_index')
         
         # Select target and additional columns
         if additional_cols:
@@ -631,6 +656,10 @@ def prepare_time_series_data(df, target_col, additional_cols=None):
             ts_data = df[cols].dropna()
         else:
             ts_data = df[[target_col]].dropna()
+        
+        # Ensure we have enough data for forecasting
+        if len(ts_data) < 3:
+            raise ValueError("Insufficient data for forecasting (minimum 3 data points required)")
         
         return ts_data
     except Exception as e:
@@ -982,11 +1011,20 @@ def perform_forecasting(target_var, additional_vars, model_type, periods, season
     try:
         progress(0.1, desc="📊 Preparing time series data...")
         
-        # Prepare data
-        ts_data = prepare_time_series_data(current_data, target_var, additional_vars)
+        # Prepare data with enhanced error handling
+        try:
+            ts_data = prepare_time_series_data(current_data, target_var, additional_vars)
+        except ValueError as ve:
+            error_msg = str(ve)
+            if "Out of bounds nanosecond timestamp" in error_msg:
+                return None, "⚠️ Dataset too large for time series analysis. Please use a smaller subset (< 10,000 rows)", "Timestamp overflow error"
+            elif "Insufficient data" in error_msg:
+                return None, "⚠️ Not enough data for forecasting (minimum 3 data points required)", "Insufficient data"
+            else:
+                return None, f"⚠️ Data preparation failed: {error_msg}", "Data preparation error"
         
         if len(ts_data) < 10:
-            return None, "⚠️ Insufficient data for forecasting (minimum 10 points required)", "Not enough data"
+            return None, "⚠️ Insufficient data for reliable forecasting (minimum 10 points recommended)", "Not enough data"
         
         progress(0.3, desc=f"🤖 Fitting {model_type} model...")
         
