@@ -50,18 +50,22 @@ def main():
         
         try:
             # Fallback to original dashboard
+            print("🔄 Loading original dashboard...")
             sys.path.insert(0, os.path.dirname(__file__))
-            from gradio_dashboard_refactored import create_gradio_interface
             
-            print("✅ Fallback dashboard loaded!")
-            dashboard = create_gradio_interface()
-            dashboard.launch(
-                server_name="0.0.0.0",
-                server_port=7860,
-                share=False,
-                debug=False,
-                show_error=True
-            )
+            # Import and run the original dashboard directly
+            import gradio_dashboard
+            print("✅ Original dashboard loaded! Starting server...")
+            
+            # The original dashboard should have its own launch mechanism
+            # Let's try to find and call it
+            if hasattr(gradio_dashboard, 'main'):
+                gradio_dashboard.main()
+            elif hasattr(gradio_dashboard, 'launch'):
+                gradio_dashboard.launch()
+            else:
+                print("⚠️ Original dashboard structure unknown, please run 'python gradio_dashboard.py' directly")
+                sys.exit(1)
         except Exception as fallback_error:
             print(f"❌ Fallback also failed: {fallback_error}")
             sys.exit(1)

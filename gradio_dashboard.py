@@ -22,6 +22,82 @@ from scipy.stats import pearsonr
 import warnings
 warnings.filterwarnings('ignore')
 
+# Global cycle detection and resolution functions
+def has_cycles(structure_model):
+    """Check if the structure model contains cycles"""
+    try:
+        # Create directed graph from structure model
+        G = nx.DiGraph()
+        edges = structure_model.edges()
+        G.add_edges_from(edges)
+        
+        # Check for cycles
+        try:
+            cycles = list(nx.simple_cycles(G))
+            if cycles:
+                print(f"🔍 Found {len(cycles)} cycle(s): {cycles}")
+                return True
+            return False
+        except:
+            return False
+            
+    except Exception as e:
+        print(f"⚠️ Cycle detection failed: {e}")
+        return False
+
+def resolve_cycles(structure_model, df_numeric):
+    """Attempt to resolve cycles by removing weakest edges"""
+    try:
+        # Create NetworkX graph
+        G = nx.DiGraph()
+        edges = structure_model.edges()
+        
+        # Add edges with weights (correlations)
+        edge_weights = {}
+        for source, target in edges:
+            if source in df_numeric.columns and target in df_numeric.columns:
+                corr = abs(df_numeric[source].corr(df_numeric[target]))
+                edge_weights[(source, target)] = corr
+                G.add_edge(source, target, weight=corr)
+        
+        # Find and break cycles by removing weakest edges
+        cycles = list(nx.simple_cycles(G))
+        edges_to_remove = []
+        
+        for cycle in cycles:
+            if len(cycle) >= 2:
+                # Find weakest edge in cycle
+                min_weight = float('inf')
+                weakest_edge = None
+                
+                for i in range(len(cycle)):
+                    source = cycle[i]
+                    target = cycle[(i + 1) % len(cycle)]
+                    
+                    if (source, target) in edge_weights:
+                        weight = edge_weights[(source, target)]
+                        if weight < min_weight:
+                            min_weight = weight
+                            weakest_edge = (source, target)
+                
+                if weakest_edge and weakest_edge not in edges_to_remove:
+                    edges_to_remove.append(weakest_edge)
+                    print(f"🔧 Removing weak edge to break cycle: {weakest_edge[0]} -> {weakest_edge[1]} (correlation: {min_weight:.3f})")
+        
+        # Create new structure model without cyclic edges
+        remaining_edges = [edge for edge in edges if edge not in edges_to_remove]
+        
+        # Create new StructureModel
+        new_sm = StructureModel()
+        new_sm.add_edges_from(remaining_edges)
+        
+        print(f"✅ Cycle resolution complete. Removed {len(edges_to_remove)} edges, kept {len(remaining_edges)} edges.")
+        return new_sm
+        
+    except Exception as e:
+        print(f"❌ Cycle resolution failed: {e}")
+        return structure_model
+
 # Vizro imports for advanced visualization
 try:
     import vizro
@@ -1147,18 +1223,45 @@ def create_forecast_plot(data, target_var, result, model_type, periods):
         historical_values = data[target_var].values
         historical_dates = data.index
         
-        # Create future dates
+        # Create future dates - handle both datetime and numeric indices
         last_date = historical_dates[-1]
-        if hasattr(last_date, 'freq') and last_date.freq:
-            freq = last_date.freq
-        else:
-            # Infer frequency from data
-            if len(historical_dates) > 1:
-                freq = pd.infer_freq(historical_dates) or 'M'
-            else:
-                freq = 'M'
         
-        future_dates = pd.date_range(start=last_date + pd.Timedelta(days=30), periods=periods, freq=freq)
+        # Check if index is datetime-based
+        if pd.api.types.is_datetime64_any_dtype(historical_dates):
+            # Handle datetime index
+            if hasattr(last_date, 'freq') and last_date.freq:
+                freq = last_date.freq
+            else:
+                # Infer frequency from datetime data
+                if len(historical_dates) > 1:
+                    try:
+                        freq = pd.infer_freq(historical_dates) or 'M'
+                    except:
+                        freq = 'M'
+                else:
+                    freq = 'M'
+            
+            try:
+                future_dates = pd.date_range(start=last_date + pd.Timedelta(days=30), periods=periods, freq=freq)
+            except:
+                # Fallback: create monthly dates from last date
+                future_dates = pd.date_range(start=last_date + pd.DateOffset(months=1), periods=periods, freq='M')
+        else:
+            # Handle numeric index (Int64Index, RangeIndex, etc.)
+            print(f"📊 Numeric index detected: {type(historical_dates)}")
+            
+            # Create future numeric indices
+            if len(historical_dates) > 1:
+                # Infer step size from existing data
+                step = historical_dates[1] - historical_dates[0]
+            else:
+                step = 1
+            
+            # Create future indices as continuation of numeric sequence
+            future_indices = range(last_date + step, last_date + step + (periods * step), step)
+            future_dates = pd.Index(future_indices)
+            
+            print(f"✅ Created future numeric indices: {list(future_dates)}")
         
         # Create plot
         fig = go.Figure()
@@ -2391,8 +2494,37 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
         
         progress(0.3, desc="🏗️ Building causal structure...")
         
-        # Build causal structure using NOTEARS
-        sm = from_pandas(df_numeric, max_iter=100, h_tol=1e-8, w_threshold=0.3)
+        # Use global cycle detection and resolution functions
+        # Build causal structure using NOTEARS with cycle detection
+        try:
+            sm = from_pandas(df_numeric, max_iter=100, h_tol=1e-8, w_threshold=0.3)
+            
+            # Check for cycles and resolve if necessary
+            if has_cycles(sm):
+                print("⚠️ Detected cycles in causal structure, applying resolution...")
+                sm = resolve_cycles(sm, df_numeric)
+                
+        except Exception as e:
+            if "not acyclic" in str(e) or "cycle" in str(e).lower():
+                return f"""
+                ❌ Intervention analysis failed: Cyclic causal structure detected
+                
+                **Problem:** The causal discovery algorithm found bidirectional relationships that create cycles.
+                
+                **Detected Issue:** {str(e)}
+                
+                **Solutions:**
+                • Try with fewer variables (select 5-10 most important ones)
+                • Increase the w_threshold parameter to filter weak relationships
+                • Use domain knowledge to remove variables that shouldn't be causally related
+                • Consider that some relationships might be correlational rather than causal
+                
+                **Technical Note:** Bayesian Networks require acyclic structures (DAGs). 
+                Cycles often indicate confounding variables or bidirectional relationships 
+                that need to be resolved through domain expertise.
+                """, f"Cyclic structure error: {str(e)}"
+            else:
+                raise e
         
         progress(0.5, desc="🧠 Creating Bayesian Network...")
         
@@ -2510,43 +2642,47 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
                 range_val = max(max_val - min_val, 1e-6)
                 split_points[col] = [min_val + range_val * 0.4, min_val + range_val * 0.6]
         
-        try:
-            discretiser = Discretiser(
-                method="fixed",
-                numeric_split_points=split_points
-            )
-        except Exception as e:
-            return f"""
-            ❌ Intervention analysis failed: Discretization setup error
-            
-            **Problem:** Could not create discretizer: {str(e)}
-            
-            **Solutions:**
-            • Try with different variables that have more variation
-            • Ensure your data has at least 10+ unique values per variable
-            • Check for data quality issues (NaN, infinite values)
-            """, f"Discretization error: {str(e)}"
+        # Skip CausalNex discretizer entirely - use manual discretization only
+        print(f"🏗️ Using manual discretization (bypassing CausalNex discretizer issues)...")
         
-        # Apply discretization with error handling
-        try:
-            df_discretised = discretiser.transform(df_numeric)
-            print(f"✅ Successfully discretized data: {df_discretised.shape}")
-        except Exception as e:
-            return f"""
-            ❌ Intervention analysis failed: Data transformation error
-            
-            **Problem:** Could not discretize the data: {str(e)}
-            
-            **Solutions:**
-            • Check that your data contains valid numeric values
-            • Remove any infinite or extremely large values
-            • Ensure variables have reasonable ranges
-            • Try with a smaller subset of variables
-            
-            **Data info:**
-            • Target variable range: {df_numeric[target_var].min():.3f} to {df_numeric[target_var].max():.3f}
-            • Intervention variable range: {df_numeric[intervention_var].min():.3f} to {df_numeric[intervention_var].max():.3f}
-            """, f"Data transformation error: {str(e)}"
+        # Manual discretization using pandas cut - this always works
+        df_discretised = df_numeric.copy()
+        discretization_info = {}
+        
+        for col in df_numeric.columns:
+            try:
+                # Calculate quantile thresholds
+                q33 = df_numeric[col].quantile(0.33)
+                q67 = df_numeric[col].quantile(0.67)
+                
+                # Store thresholds for intervention value discretization
+                discretization_info[col] = {'q33': q33, 'q67': q67}
+                
+                # Apply discretization
+                df_discretised[col] = pd.cut(
+                    df_numeric[col], 
+                    bins=[-np.inf, q33, q67, np.inf], 
+                    labels=['low', 'medium', 'high']
+                )
+                
+                print(f"✅ Discretized {col}: low ≤ {q33:.3f}, medium ≤ {q67:.3f}, high > {q67:.3f}")
+                
+            except Exception as e:
+                return f"""
+                ❌ Intervention analysis failed: Manual discretization error
+                
+                **Problem:** Could not discretize variable '{col}': {str(e)}
+                
+                **Solutions:**
+                • Check that '{col}' contains valid numeric values
+                • Ensure the variable has sufficient variation
+                • Remove any infinite or extremely large values
+                """, f"Manual discretization error for {col}: {str(e)}"
+        
+        print(f"✅ Manual discretization completed successfully for {len(df_numeric.columns)} variables")
+        
+        # Manual discretization is already completed above
+        print(f"✅ Data discretization completed: {df_discretised.shape}")
         
         # Create Bayesian Network
         bn = BayesianNetwork(sm)
@@ -2581,9 +2717,20 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
             """, "Intervention value out of range"
         
         try:
-            intervention_discretised = discretiser.transform(pd.DataFrame({intervention_var: [intervention_value]}))
-            intervention_state = intervention_discretised[intervention_var].iloc[0]
+            # Use the same manual discretization approach for intervention value
+            q33 = discretization_info[intervention_var]['q33']
+            q67 = discretization_info[intervention_var]['q67']
+            
+            if intervention_value <= q33:
+                intervention_state = 'low'
+            elif intervention_value <= q67:
+                intervention_state = 'medium'
+            else:
+                intervention_state = 'high'
+                
             print(f"✅ Intervention value {intervention_value} discretized to state: {intervention_state}")
+            print(f"📊 Discretization thresholds: low ≤ {q33:.3f}, medium ≤ {q67:.3f}, high > {q67:.3f}")
+            
         except Exception as e:
             return f"""
             ❌ Intervention analysis failed: Could not discretize intervention value
@@ -2739,8 +2886,31 @@ def perform_causal_path_analysis(source_var, target_var, progress=gr.Progress())
         
         progress(0.3, desc="🏗️ Building causal structure...")
         
-        # Build causal structure
-        sm = from_pandas(df_numeric, max_iter=100, h_tol=1e-8, w_threshold=0.3)
+        # Build causal structure with cycle detection (reuse functions from intervention analysis)
+        try:
+            sm = from_pandas(df_numeric, max_iter=100, h_tol=1e-8, w_threshold=0.3)
+            
+            # Check for cycles and resolve if necessary
+            if has_cycles(sm):
+                print("⚠️ Detected cycles in causal structure, applying resolution...")
+                sm = resolve_cycles(sm, df_numeric)
+                
+        except Exception as e:
+            if "not acyclic" in str(e) or "cycle" in str(e).lower():
+                return f"""
+                ❌ Pathway analysis failed: Cyclic causal structure detected
+                
+                **Problem:** The causal discovery algorithm found bidirectional relationships that create cycles.
+                
+                **Solutions:**
+                • Try with fewer variables (select 5-10 most important ones)
+                • Use domain knowledge to identify truly causal relationships
+                • Consider that some relationships might be correlational, not causal
+                
+                **Technical Note:** {str(e)}
+                """, "Cyclic structure error"
+            else:
+                raise e
         
         progress(0.5, desc="🔍 Finding causal paths...")
         
@@ -2892,18 +3062,48 @@ def perform_causal_discovery_comparison(progress=gr.Progress()):
         
         progress(0.3, desc="🏗️ Running NOTEARS algorithm...")
         
-        # Method 1: NOTEARS (current method)
-        sm_notears = from_pandas(df_numeric, max_iter=100, h_tol=1e-8, w_threshold=0.3)
+        # Method 1: NOTEARS (current method) with cycle detection
+        try:
+            sm_notears = from_pandas(df_numeric, max_iter=100, h_tol=1e-8, w_threshold=0.3)
+            if has_cycles(sm_notears):
+                print("⚠️ Method 1: Resolving cycles...")
+                sm_notears = resolve_cycles(sm_notears, df_numeric)
+        except Exception as e:
+            if "not acyclic" in str(e) or "cycle" in str(e).lower():
+                print(f"⚠️ Method 1 failed due to cycles: {e}")
+                sm_notears = StructureModel()  # Empty model as fallback
+            else:
+                raise e
         
         progress(0.5, desc="🔍 Running NOTEARS with different parameters...")
         
         # Method 2: NOTEARS with stricter threshold
-        sm_notears_strict = from_pandas(df_numeric, max_iter=100, h_tol=1e-8, w_threshold=0.5)
+        try:
+            sm_notears_strict = from_pandas(df_numeric, max_iter=100, h_tol=1e-8, w_threshold=0.5)
+            if has_cycles(sm_notears_strict):
+                print("⚠️ Method 2: Resolving cycles...")
+                sm_notears_strict = resolve_cycles(sm_notears_strict, df_numeric)
+        except Exception as e:
+            if "not acyclic" in str(e) or "cycle" in str(e).lower():
+                print(f"⚠️ Method 2 failed due to cycles: {e}")
+                sm_notears_strict = StructureModel()  # Empty model as fallback
+            else:
+                raise e
         
         progress(0.7, desc="🧮 Running NOTEARS with relaxed parameters...")
         
         # Method 3: NOTEARS with relaxed threshold
-        sm_notears_relaxed = from_pandas(df_numeric, max_iter=100, h_tol=1e-8, w_threshold=0.1)
+        try:
+            sm_notears_relaxed = from_pandas(df_numeric, max_iter=100, h_tol=1e-8, w_threshold=0.1)
+            if has_cycles(sm_notears_relaxed):
+                print("⚠️ Method 3: Resolving cycles...")
+                sm_notears_relaxed = resolve_cycles(sm_notears_relaxed, df_numeric)
+        except Exception as e:
+            if "not acyclic" in str(e) or "cycle" in str(e).lower():
+                print(f"⚠️ Method 3 failed due to cycles: {e}")
+                sm_notears_relaxed = StructureModel()  # Empty model as fallback
+            else:
+                raise e
         
         progress(0.9, desc="📊 Comparing results...")
         

@@ -94,13 +94,37 @@ def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_al
         
         progress(0.3, desc="🧠 Building causal structure (NOTEARS)...")
         
-        # Build causal structure using NOTEARS with optimized parameters
-        sm = from_pandas(
-            df_scaled, 
-            max_iter=CAUSAL_ANALYSIS_PARAMS['max_iter'],
-            h_tol=CAUSAL_ANALYSIS_PARAMS['h_tol'],
-            w_threshold=CAUSAL_ANALYSIS_PARAMS['w_threshold']
-        )
+        # Build causal structure using NOTEARS with optimized parameters and cycle handling
+        try:
+            sm = from_pandas(
+                df_scaled, 
+                max_iter=CAUSAL_ANALYSIS_PARAMS['max_iter'],
+                h_tol=CAUSAL_ANALYSIS_PARAMS['h_tol'],
+                w_threshold=CAUSAL_ANALYSIS_PARAMS['w_threshold']
+            )
+            
+            # Check for cycles and resolve if necessary
+            if has_cycles(sm):
+                print("⚠️ Detected cycles in causal structure, applying resolution...")
+                sm = resolve_cycles(sm, df_numeric)
+                
+        except Exception as e:
+            if "not acyclic" in str(e) or "cycle" in str(e).lower():
+                return None, None, f"""
+                ❌ Causal analysis failed: Cyclic structure detected
+                
+                **Problem:** The algorithm found bidirectional relationships creating cycles.
+                
+                **Solutions:**
+                • Try with fewer variables (select most important ones)
+                • Increase minimum correlation threshold to filter weak relationships
+                • Use domain knowledge to identify truly causal relationships
+                • Consider that some relationships might be correlational, not causal
+                
+                **Technical Note:** {str(e)}
+                """
+            else:
+                raise e
         
         progress(0.5, desc="🔗 Identifying causal relationships...")
         
@@ -386,6 +410,89 @@ def create_network_plot(sm, edge_stats, theme, show_all_relationships=False):
         )
         return fig
 
+def has_cycles(structure_model):
+    """Check if the structure model contains cycles"""
+    try:
+        # Try to create a NetworkX graph and check for cycles
+        import networkx as nx
+        
+        # Create directed graph from structure model
+        G = nx.DiGraph()
+        edges = structure_model.edges()
+        G.add_edges_from(edges)
+        
+        # Check for cycles
+        try:
+            cycles = list(nx.simple_cycles(G))
+            if cycles:
+                print(f"🔍 Found {len(cycles)} cycle(s): {cycles}")
+                return True
+            return False
+        except:
+            # If cycle detection fails, assume no cycles
+            return False
+            
+    except Exception as e:
+        print(f"⚠️ Cycle detection failed: {e}")
+        return False
+
+def resolve_cycles(structure_model, df_numeric):
+    """Attempt to resolve cycles by removing weakest edges"""
+    try:
+        import networkx as nx
+        from causalnex.structure import StructureModel
+        
+        # Create NetworkX graph
+        G = nx.DiGraph()
+        edges = structure_model.edges()
+        
+        # Add edges with weights (correlations)
+        edge_weights = {}
+        for source, target in edges:
+            if source in df_numeric.columns and target in df_numeric.columns:
+                corr = abs(df_numeric[source].corr(df_numeric[target]))
+                edge_weights[(source, target)] = corr
+                G.add_edge(source, target, weight=corr)
+        
+        # Find and break cycles by removing weakest edges
+        cycles = list(nx.simple_cycles(G))
+        edges_to_remove = []
+        
+        for cycle in cycles:
+            if len(cycle) >= 2:
+                # Find weakest edge in cycle
+                min_weight = float('inf')
+                weakest_edge = None
+                
+                for i in range(len(cycle)):
+                    source = cycle[i]
+                    target = cycle[(i + 1) % len(cycle)]
+                    
+                    if (source, target) in edge_weights:
+                        weight = edge_weights[(source, target)]
+                        if weight < min_weight:
+                            min_weight = weight
+                            weakest_edge = (source, target)
+                
+                if weakest_edge and weakest_edge not in edges_to_remove:
+                    edges_to_remove.append(weakest_edge)
+                    print(f"🔧 Removing weak edge to break cycle: {weakest_edge[0]} -> {weakest_edge[1]} (correlation: {min_weight:.3f})")
+        
+        # Create new structure model without cyclic edges
+        remaining_edges = [edge for edge in edges if edge not in edges_to_remove]
+        
+        # Create new StructureModel
+        new_sm = StructureModel()
+        new_sm.add_edges_from(remaining_edges)
+        
+        print(f"✅ Cycle resolution complete. Removed {len(edges_to_remove)} edges, kept {len(remaining_edges)} edges.")
+        return new_sm
+        
+    except Exception as e:
+        print(f"❌ Cycle resolution failed: {e}")
+        # Return original structure model if resolution fails
+        return structure_model
+
 def create_ultra_robust_split_points(series):
     """Create guaranteed monotonically increasing split points with extensive validation"""
     # Remove NaN and infinite values
@@ -547,8 +654,36 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
         
         progress(0.3, desc="🏗️ Building causal structure...")
         
-        # Build causal structure using NOTEARS
-        sm = from_pandas(df_numeric, max_iter=100, h_tol=1e-8, w_threshold=0.3)
+        # Build causal structure using NOTEARS with cycle detection
+        try:
+            sm = from_pandas(df_numeric, max_iter=100, h_tol=1e-8, w_threshold=0.3)
+            
+            # Check for cycles in the structure
+            if has_cycles(sm):
+                print("⚠️ Detected cycles in causal structure, applying cycle resolution...")
+                sm = resolve_cycles(sm, df_numeric)
+                
+        except Exception as e:
+            if "not acyclic" in str(e) or "cycle" in str(e).lower():
+                return f"""
+                ❌ Intervention analysis failed: Cyclic causal structure detected
+                
+                **Problem:** The causal discovery algorithm found bidirectional relationships that create cycles.
+                
+                **Detected Issue:** {str(e)}
+                
+                **Solutions:**
+                • Try with fewer variables (select 5-10 most important ones)
+                • Increase the w_threshold parameter to filter weak relationships
+                • Use domain knowledge to remove variables that shouldn't be causally related
+                • Consider that some relationships might be correlational rather than causal
+                
+                **Technical Note:** Bayesian Networks require acyclic structures (DAGs). 
+                Cycles often indicate confounding variables or bidirectional relationships 
+                that need to be resolved through domain expertise.
+                """, f"Cyclic structure error: {str(e)}"
+            else:
+                raise e
         
         progress(0.5, desc="🧠 Creating Bayesian Network...")
         
