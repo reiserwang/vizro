@@ -1,0 +1,231 @@
+{
+  "server": {
+    "port": 7860,
+    "host": "0.0.0.0",
+    "share": false,
+    "debug": false,
+    "show_error": true,
+    "quiet": false,
+    "inbrowser": true,
+    "ssl_verify": false,
+    "favicon_path": null,
+    "auth": null,
+    "auth_message": null,
+    "max_threads": 40,
+    "show_tips": false,
+    "height": 500,
+    "width": "100%",
+    "prevent_thread_lock": false
+  },
+  "ui": {
+    "title": "🔍 Dynamic Data Analysis Dashboard",
+    "description": "Advanced Causal Discovery • Professional Visualizations • Comprehensive Forecasting",
+    "theme": "default",
+    "css_file": null,
+    "analytics_enabled": false,
+    "show_api": true,
+    "show_error": true,
+    "layout": {
+      "header_height": "120px",
+      "sidebar_width": "300px",
+      "content_padding": "20px"
+    },
+    "colors": {
+      "primary": "#667eea",
+      "secondary": "#764ba2",
+      "success": "#28a745",
+      "warning": "#ffc107",
+      "danger": "#dc3545",
+      "info": "#17a2b8"
+    }
+  },
+  "data": {
+    "max_file_size_mb": 100,
+    "supported_formats": [".csv", ".xlsx", ".xls"],
+    "preview_rows": 20,
+    "max_columns_display": 50,
+    "auto_detect_types": true,
+    "encoding": "utf-8",
+    "decimal_separator": ".",
+    "thousands_separator": ",",
+    "date_formats": ["YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD HH:MM:SS"]
+  },
+  "visualization": {
+    "default_theme": "Light",
+    "chart_height": 600,
+    "enhanced_chart_height": 700,
+    "default_chart_type": "Enhanced Scatter Plot",
+    "color_palette": ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"],
+    "show_correlation_threshold": 0.3,
+    "max_categories_in_legend": 10,
+    "animation_duration": 500,
+    "hover_mode": "closest",
+    "margin": {
+      "left": 50,
+      "right": 50,
+      "top": 80,
+      "bottom": 50
+    }
+  },
+  "causal_analysis": {
+    "max_variables": 12,
+    "max_samples": 1500,
+    "notears_params": {
+      "max_iter": 100,
+      "h_tol": 1e-8,
+      "w_threshold": 0.3
+    },
+    "significance_threshold": 0.05,
+    "correlation_thresholds": {
+      "strong": 0.7,
+      "moderate": 0.3,
+      "weak": 0.1
+    },
+    "discretization": {
+      "method": "fixed",
+      "n_bins": 3,
+      "min_separation_ratio": 0.05
+    },
+    "network_layout": {
+      "algorithm": "spring",
+      "k": 3,
+      "iterations": 50,
+      "seed": 42
+    },
+    "progress_steps": [
+      "🔍 Loading and validating data...",
+      "📊 Analyzing data characteristics...",
+      "🎯 Selecting optimal variables...",
+      "📈 Computing correlation matrix...",
+      "🧠 Building causal structure (NOTEARS)...",
+      "🔗 Identifying causal relationships...",
+      "📊 Calculating statistical significance...",
+      "🎨 Creating network visualization...",
+      "📋 Generating results table...",
+      "🔍 Computing edge statistics...",
+      "📊 Finalizing analysis...",
+      "✅ Analysis complete!"
+    ]
+  },
+  "forecasting": {
+    "default_model": "Linear Regression",
+    "default_periods": 12,
+    "default_confidence_level": 0.95,
+    "default_seasonal_period": 12,
+    "max_forecast_periods": 100,
+    "min_data_points": 3,
+    "recommended_min_points": 10,
+    "models": {
+      "Linear Regression": {
+        "description": "Simple trend-based forecasting",
+        "min_points": 3,
+        "supports_multivariate": false
+      },
+      "ARIMA": {
+        "description": "Autoregressive integrated moving average",
+        "min_points": 10,
+        "supports_multivariate": false
+      },
+      "SARIMA": {
+        "description": "Seasonal ARIMA with seasonality handling",
+        "min_points": 24,
+        "supports_multivariate": false
+      },
+      "VAR (Vector Autoregression)": {
+        "description": "Multivariate relationships and cross-variable effects",
+        "min_points": 20,
+        "supports_multivariate": true
+      },
+      "Dynamic Factor Model": {
+        "description": "Complex systems with latent factors",
+        "min_points": 30,
+        "supports_multivariate": true
+      },
+      "State-Space Model": {
+        "description": "Unobserved components (trend + seasonality)",
+        "min_points": 20,
+        "supports_multivariate": false
+      },
+      "Nowcasting": {
+        "description": "Short-term high-frequency predictions",
+        "min_points": 5,
+        "supports_multivariate": false
+      }
+    },
+    "plot_settings": {
+      "height": 600,
+      "show_confidence_intervals": true,
+      "show_fitted_values": true,
+      "line_width": 2,
+      "marker_size": 6,
+      "colors": {
+        "historical": "blue",
+        "fitted": "green",
+        "forecast": "red",
+        "confidence": "rgba(255, 0, 0, 0.2)"
+      }
+    }
+  },
+  "performance": {
+    "enable_caching": true,
+    "cache_size_mb": 500,
+    "parallel_processing": true,
+    "max_workers": 4,
+    "memory_limit_mb": 2048,
+    "timeout_seconds": 300,
+    "progress_update_interval": 0.1,
+    "auto_gc": true,
+    "optimize_memory": true
+  },
+  "export": {
+    "default_format": "csv",
+    "include_metadata": true,
+    "timestamp_format": "YYYY-MM-DD_HH-MM-SS",
+    "compression": false,
+    "max_export_rows": 100000,
+    "supported_formats": ["csv", "xlsx", "json", "html"],
+    "filename_template": "{analysis_type}_results_{timestamp}"
+  },
+  "logging": {
+    "level": "INFO",
+    "enable_file_logging": false,
+    "log_file": "dashboard.log",
+    "max_log_size_mb": 10,
+    "backup_count": 3,
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "console_output": true
+  },
+  "security": {
+    "enable_auth": false,
+    "session_timeout_minutes": 60,
+    "max_upload_size_mb": 100,
+    "allowed_file_types": [".csv", ".xlsx", ".xls"],
+    "sanitize_filenames": true,
+    "validate_uploads": true,
+    "rate_limiting": {
+      "enabled": false,
+      "requests_per_minute": 60
+    }
+  },
+  "features": {
+    "enable_vizro": true,
+    "enable_forecasting": true,
+    "enable_causal_analysis": true,
+    "enable_intervention_analysis": true,
+    "enable_pathway_analysis": true,
+    "enable_data_insights": true,
+    "enable_export": true,
+    "enable_advanced_filtering": true,
+    "enable_real_time_updates": true,
+    "experimental_features": false
+  },
+  "help": {
+    "show_tooltips": true,
+    "show_examples": true,
+    "documentation_url": "https://github.com/your-repo/dashboard/docs",
+    "support_email": "support@example.com",
+    "version": "2.0.0",
+    "build_date": "2024-01-01",
+    "changelog_url": "https://github.com/your-repo/dashboard/releases"
+  }
+}
