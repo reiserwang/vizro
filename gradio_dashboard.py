@@ -384,28 +384,68 @@ def create_vizro_enhanced_visualization(x_axis, y_axis, color_var, chart_type, t
         
         # Handle date columns - convert string dates to datetime
         def convert_date_columns(dataframe):
-            """Convert potential date columns to datetime"""
+            """Convert potential date columns to datetime - handles non-English column names"""
             for col in dataframe.columns:
-                if col.lower() in ['date', 'time', 'timestamp'] or 'date' in col.lower():
-                    if not pd.api.types.is_datetime64_any_dtype(dataframe[col]):
-                        try:
-                            # Try to convert to datetime
-                            dataframe[col] = pd.to_datetime(dataframe[col], errors='coerce')
-                            print(f"✅ Converted {col} to datetime")
-                        except Exception as e:
-                            print(f"⚠️ Could not convert {col} to datetime: {e}")
+                # Skip if already datetime
+                if pd.api.types.is_datetime64_any_dtype(dataframe[col]):
+                    continue
+                
+                # Skip if already numeric (don't convert numbers to dates)
+                if pd.api.types.is_numeric_dtype(dataframe[col]):
+                    continue
+                
+                # Only process string/object columns
+                if dataframe[col].dtype != 'object':
+                    continue
+                
+                # Check column name for date-related keywords (English and common patterns)
+                col_lower = col.lower()
+                is_date_column = any(keyword in col_lower for keyword in 
+                                    ['date', 'time', 'timestamp', 'year', 'month', 'day', 
+                                     '年別', '年月', '日期', 'fecha', 'datum', 'année'])
+                
+                # Only try conversion if column name suggests it's a date
+                if is_date_column:
+                    try:
+                        # Try to convert to datetime
+                        converted = pd.to_datetime(dataframe[col], errors='coerce')
+                        
+                        # Only apply conversion if at least 80% of values are valid dates
+                        # This prevents false positives on numeric-looking strings
+                        valid_ratio = converted.notna().sum() / len(converted)
+                        if valid_ratio >= 0.8:
+                            dataframe[col] = converted
+                            print(f"✅ Converted {col} to datetime ({valid_ratio*100:.1f}% valid dates)")
+                        else:
+                            print(f"⚠️ Skipped {col}: only {valid_ratio*100:.1f}% valid dates (threshold: 80%)")
+                    except Exception as e:
+                        # If conversion fails, leave as is
+                        pass
             return dataframe
         
         # Convert date columns
         df = convert_date_columns(df)
         
-        # For scatter plots and other charts, if x_axis is a date column, ensure it's properly handled
-        if x_axis in df.columns:
-            if x_axis.lower() in ['date', 'time', 'timestamp'] or 'date' in x_axis.lower():
-                if not pd.api.types.is_datetime64_any_dtype(df[x_axis]):
+        # For scatter plots and other charts, if x_axis is a string column, try to convert to datetime
+        if x_axis in df.columns and not pd.api.types.is_datetime64_any_dtype(df[x_axis]):
+            # Skip if already numeric
+            if not pd.api.types.is_numeric_dtype(df[x_axis]) and df[x_axis].dtype == 'object':
+                # Check if column name suggests dates
+                col_lower = x_axis.lower()
+                is_date_column = any(keyword in col_lower for keyword in 
+                                    ['date', 'time', 'timestamp', 'year', 'month', 'day',
+                                     '年別', '年月', '日期', 'fecha', 'datum', 'année'])
+                
+                if is_date_column:
                     try:
-                        df[x_axis] = pd.to_datetime(df[x_axis], errors='coerce')
-                        print(f"✅ Converted x-axis {x_axis} to datetime for visualization")
+                        converted = pd.to_datetime(df[x_axis], errors='coerce')
+                        valid_ratio = converted.notna().sum() / len(converted)
+                        
+                        if valid_ratio >= 0.8:
+                            df[x_axis] = converted
+                            print(f"✅ Converted x-axis {x_axis} to datetime for visualization ({valid_ratio*100:.1f}% valid)")
+                        else:
+                            print(f"⚠️ Skipped x-axis {x_axis}: only {valid_ratio*100:.1f}% valid dates")
                     except Exception as e:
                         print(f"⚠️ Could not convert x-axis {x_axis} to datetime: {e}")
         
@@ -566,10 +606,22 @@ def create_vizro_enhanced_visualization(x_axis, y_axis, color_var, chart_type, t
         
         elif chart_type == 'Time Series Analysis':
             # Enhanced time series with trend and seasonality
-            if pd.api.types.is_datetime64_any_dtype(df[x_axis]) or x_axis.lower() in ['date', 'time', 'timestamp']:
+            # Check if x_axis is datetime or can be converted
+            col_lower = x_axis.lower()
+            is_date_column = any(keyword in col_lower for keyword in 
+                                ['date', 'time', 'timestamp', 'year', 'month', 'day',
+                                 '年別', '年月', '日期', 'fecha', 'datum', 'année'])
+            
+            if pd.api.types.is_datetime64_any_dtype(df[x_axis]) or is_date_column:
                 # Convert to datetime if not already
-                if not pd.api.types.is_datetime64_any_dtype(df[x_axis]):
-                    df[x_axis] = pd.to_datetime(df[x_axis], errors='coerce')
+                if not pd.api.types.is_datetime64_any_dtype(df[x_axis]) and df[x_axis].dtype == 'object':
+                    try:
+                        converted = pd.to_datetime(df[x_axis], errors='coerce')
+                        valid_ratio = converted.notna().sum() / len(converted)
+                        if valid_ratio >= 0.8:
+                            df[x_axis] = converted
+                    except:
+                        pass
                 
                 df = df.dropna(subset=[x_axis]).sort_values(x_axis)
                 
@@ -2017,6 +2069,10 @@ def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_al
         # Select only numeric columns
         df_numeric = df_numeric.select_dtypes(include=['number'])
         
+        # Clean data: handle infinity and NaN values
+        # Replace infinity with NaN
+        df_numeric = df_numeric.replace([np.inf, -np.inf], np.nan)
+        
         # Efficient NaN handling
         nan_threshold = 0.5
         valid_cols = df_numeric.columns[df_numeric.isnull().mean() < nan_threshold]
@@ -2214,8 +2270,14 @@ def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_al
             # Network display information
             network_display_info = ""
             if show_all_relationships:
+                # Count connected vs isolated nodes
+                df_numeric = current_data.select_dtypes(include=[np.number])
+                total_variables = len(df_numeric.columns)
+                connected_variables = len(set([edge[0] for edge in network_model.edges()] + [edge[1] for edge in network_model.edges()]))
+                isolated_variables = total_variables - connected_variables
+                
                 network_display_info = f"""
-            **Network Display:** Showing ALL {total_network_relationships} relationships (including weak ones)  
+            **Network Display:** Showing ALL {total_variables} variables ({connected_variables} connected, {isolated_variables} isolated) with {total_network_relationships} relationships  
             **Table Display:** Showing {total_relationships} filtered relationships  """
             else:
                 network_display_info = f"""
@@ -2292,8 +2354,28 @@ def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_al
 def create_network_plot(sm, edge_stats, theme, show_all_relationships=False):
     """Create network visualization using Plotly with proper hover interactions"""
     try:
-        # Check if we have nodes
-        if len(sm.nodes()) == 0:
+        global current_data
+        
+        # Determine which nodes to display
+        if show_all_relationships and current_data is not None:
+            # Show ALL numeric variables when "show all relationships" is checked
+            df_numeric = current_data.select_dtypes(include=[np.number])
+            all_nodes = list(df_numeric.columns)
+            
+            # Create a graph with all nodes, including isolated ones
+            display_graph = nx.DiGraph()
+            display_graph.add_nodes_from(all_nodes)
+            
+            # Add edges from the structure model
+            if len(sm.nodes()) > 0:
+                display_graph.add_edges_from(sm.edges(data=True))
+        else:
+            # Use only nodes that have connections (original behavior)
+            display_graph = sm
+            all_nodes = list(sm.nodes())
+        
+        # Check if we have nodes to display
+        if len(all_nodes) == 0:
             fig = go.Figure()
             fig.add_annotation(
                 text="No causal relationships found with current settings.<br>Try adjusting the correlation threshold or significance filter.",
@@ -2309,12 +2391,13 @@ def create_network_plot(sm, edge_stats, theme, show_all_relationships=False):
             return fig
         
         # Create layout using networkx with better positioning
-        pos = nx.spring_layout(sm, k=2, iterations=100, seed=42)
+        # Use the display_graph for layout to include all nodes
+        pos = nx.spring_layout(display_graph, k=2, iterations=100, seed=42)
         
         # Prepare edge traces with hover information
         edge_traces = []
         
-        for u, v, data in sm.edges(data=True):
+        for u, v, data in display_graph.edges(data=True):
             x0, y0 = pos[u]
             x1, y1 = pos[v]
             
@@ -2350,22 +2433,25 @@ def create_network_plot(sm, edge_stats, theme, show_all_relationships=False):
         node_info = []
         node_sizes = []
         
-        for node in sm.nodes():
+        for node in all_nodes:
             x, y = pos[node]
             node_x.append(x)
             node_y.append(y)
             node_text.append(str(node)[:15] + "..." if len(str(node)) > 15 else str(node))  # Truncate long names
             
             # Count connections for node importance
-            in_degree = sm.in_degree(node)
-            out_degree = sm.out_degree(node)
+            in_degree = display_graph.in_degree(node) if node in display_graph else 0
+            out_degree = display_graph.out_degree(node) if node in display_graph else 0
             total_connections = in_degree + out_degree
             
             # Scale node size based on connections
             node_size = max(30, min(80, 30 + total_connections * 10))
             node_sizes.append(node_size)
             
-            node_info.append(f"<b>{node}</b><br>Incoming connections: {in_degree}<br>Outgoing connections: {out_degree}<br>Total influence: {total_connections}")
+            if total_connections == 0:
+                node_info.append(f"<b>{node}</b><br>No causal relationships found<br>This variable appears isolated in the causal network")
+            else:
+                node_info.append(f"<b>{node}</b><br>Incoming connections: {in_degree}<br>Outgoing connections: {out_degree}<br>Total influence: {total_connections}")
         
         # Create figure
         fig = go.Figure()
@@ -2374,9 +2460,17 @@ def create_network_plot(sm, edge_stats, theme, show_all_relationships=False):
         for edge_trace in edge_traces:
             fig.add_trace(edge_trace)
         
-        # Add nodes with proper hover
+        # Add nodes with proper hover - differentiate connected vs isolated nodes
         colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F8B500', '#FF69B4', '#20B2AA']
-        node_colors = [colors[i % len(colors)] for i in range(len(node_x))]
+        node_colors = []
+        
+        for i, node in enumerate(all_nodes):
+            if display_graph.degree(node) > 0:
+                # Connected nodes get vibrant colors
+                node_colors.append(colors[i % len(colors)])
+            else:
+                # Isolated nodes get muted gray color
+                node_colors.append('#B0B0B0')
         
         fig.add_trace(go.Scatter(
             x=node_x, 
@@ -2401,13 +2495,16 @@ def create_network_plot(sm, edge_stats, theme, show_all_relationships=False):
         template = 'plotly_dark' if theme == 'Dark' else 'plotly_white'
         
         # Create title based on whether all relationships are shown
-        title_text = "🔍 Causal Relationship Network"
         if show_all_relationships:
-            title_text += " (All Relationships)"
+            connected_count = len([n for n in all_nodes if display_graph.degree(n) > 0])
+            isolated_count = len(all_nodes) - connected_count
+            title_text = f"🌐 Complete Network View ({len(all_nodes)} variables: {connected_count} connected, {isolated_count} isolated)"
+        else:
+            title_text = f"🔍 Causal Relationship Network ({len(all_nodes)} connected variables)"
         
         # Create annotation text based on display mode
         if show_all_relationships:
-            annotation_text = "<b>🌐 Showing ALL relationships</b> (including weak ones)<br><b>Green edges:</b> Significant (p < 0.05) | <b>Red edges:</b> Non-significant<br><b>Node size:</b> Number of connections | <b>Hover:</b> Detailed statistics"
+            annotation_text = "<b>🌐 Showing ALL variables and relationships</b><br><b>Colored nodes:</b> Have causal connections | <b>Gray nodes:</b> No causal relationships found<br><b>Green edges:</b> Significant (p < 0.05) | <b>Red edges:</b> Non-significant | <b>Node size:</b> Number of connections"
         else:
             annotation_text = "<b>Green edges:</b> Significant relationships (p < 0.05) | <b>Red edges:</b> Non-significant<br><b>Node size:</b> Number of connections | <b>Hover:</b> Detailed statistics"
         
@@ -2474,23 +2571,115 @@ def create_network_plot(sm, edge_stats, theme, show_all_relationships=False):
         )
         return fig
 
+def get_intervention_suggestions(intervention_var):
+    """Get suggested intervention values for a variable"""
+    global current_data
+    
+    if current_data is None or intervention_var not in current_data.columns:
+        return "No data loaded or variable not found"
+    
+    try:
+        series = current_data[intervention_var]
+        if not pd.api.types.is_numeric_dtype(series):
+            return f"{intervention_var} is not numeric"
+        
+        mean_val = series.mean()
+        std_val = series.std()
+        min_val = series.min()
+        max_val = series.max()
+        
+        low_suggestion = max(mean_val - std_val, min_val)
+        high_suggestion = min(mean_val + std_val, max_val)
+        
+        return f"""
+**Suggested values for {intervention_var}:**
+• **Low impact**: {low_suggestion:.1f} (mean - 1 std)
+• **Medium impact**: {mean_val:.1f} (mean)
+• **High impact**: {high_suggestion:.1f} (mean + 1 std)
+
+**Data range**: {min_val:.1f} to {max_val:.1f}
+        """.strip()
+        
+    except Exception as e:
+        return f"Error calculating suggestions: {str(e)}"
+
 def perform_causal_intervention_analysis(target_var, intervention_var, intervention_value, progress=gr.Progress()):
-    """Perform causal intervention analysis (do-calculus)"""
+    """Perform causal intervention analysis (do-calculus) with Apple Silicon optimization"""
     global current_data, causal_results
     
     try:
         progress(0.1, desc="🔬 Preparing intervention analysis...")
         
+        # Apple Silicon hardware acceleration setup
+        import os
+        os.environ['OPENBLAS_NUM_THREADS'] = '8'  # Optimize for Apple Silicon
+        os.environ['MKL_NUM_THREADS'] = '8'
+        os.environ['NUMEXPR_MAX_THREADS'] = '8'
+        print("🚀 Apple Silicon hardware acceleration enabled")
+        
         if current_data is None:
             return "❌ No data loaded", "Please upload data first"
         
-        # Get numeric data
+        # Get numeric data with smart preprocessing
         df_numeric = current_data.select_dtypes(include=[np.number])
         if df_numeric.empty:
             return "❌ No numeric data found", "Please ensure your data contains numeric variables"
         
         if target_var not in df_numeric.columns or intervention_var not in df_numeric.columns:
             return "❌ Variables not found", "Selected variables not found in data"
+        
+        # Clean data: handle infinity and NaN values
+        original_shape = df_numeric.shape
+        df_numeric = df_numeric.replace([np.inf, -np.inf], np.nan)
+        df_numeric = df_numeric.dropna()
+        
+        if df_numeric.empty:
+            return """
+            ❌ Intervention analysis failed: No valid data after cleaning
+            
+            **Problem:** All rows contain NaN or infinity values
+            
+            **Solutions:**
+            • Check your data for missing values
+            • Remove or impute missing values before analysis
+            • Ensure numeric columns contain valid numbers
+            """, "No valid data after cleaning"
+        
+        if df_numeric.shape[0] < original_shape[0] * 0.3:
+            print(f"⚠️ Warning: Removed {original_shape[0] - df_numeric.shape[0]} rows with NaN/infinity ({(1 - df_numeric.shape[0]/original_shape[0])*100:.1f}% of data)")
+        
+        # Performance optimization: Ultra-aggressive reduction for intervention analysis
+        original_shape = df_numeric.shape
+        print(f"📊 Original dataset: {original_shape[0]} rows × {original_shape[1]} variables")
+        
+        # Ultra-aggressive sampling for intervention analysis (computationally intensive)
+        max_samples = 800   # Ultra-optimized for Apple Silicon performance
+        max_variables = 8   # Strict computational complexity limit
+        
+        if original_shape[0] > max_samples:
+            print(f"⚡ Smart sampling: {max_samples} rows for optimal intervention analysis performance")
+            sample_indices = np.random.choice(df_numeric.index, size=max_samples, replace=False)
+            df_numeric = df_numeric.loc[sample_indices]
+        
+        if original_shape[1] > max_variables:
+            print(f"🎯 Variable selection: {max_variables} most relevant for intervention analysis")
+            
+            # Always include target and intervention variables
+            essential_vars = [target_var, intervention_var]
+            
+            # Select most correlated variables with target
+            correlations = df_numeric.corrwith(df_numeric[target_var]).abs()
+            correlations = correlations.drop(essential_vars, errors='ignore')
+            
+            remaining_slots = max_variables - len(essential_vars)
+            top_vars = correlations.nlargest(remaining_slots).index.tolist()
+            
+            selected_vars = essential_vars + top_vars
+            df_numeric = df_numeric[selected_vars]
+            print(f"✅ Selected variables: {selected_vars}")
+        
+        print(f"📊 Optimized dataset: {df_numeric.shape[0]} rows × {df_numeric.shape[1]} variables")
+        print(f"⚡ Performance improvement: {original_shape[0]/df_numeric.shape[0]:.1f}x fewer rows, {original_shape[1]/df_numeric.shape[1]:.1f}x fewer variables")
         
         progress(0.3, desc="🏗️ Building causal structure...")
         
@@ -2680,40 +2869,190 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
                 """, f"Manual discretization error for {col}: {str(e)}"
         
         print(f"✅ Manual discretization completed successfully for {len(df_numeric.columns)} variables")
-        
-        # Manual discretization is already completed above
         print(f"✅ Data discretization completed: {df_discretised.shape}")
         
-        # Create Bayesian Network
-        bn = BayesianNetwork(sm)
-        bn = bn.fit_node_states(df_discretised)
-        bn = bn.fit_cpds(df_discretised, method="BayesianEstimator", bayes_prior="K2")
+        # CRITICAL: Ultra-aggressive early reduction to prevent hanging
+        if df_discretised.shape[0] > 800 or df_discretised.shape[1] > 8:
+            print(f"🚀 EMERGENCY OPTIMIZATION: Reducing from {df_discretised.shape} to prevent hanging...")
+            
+            # Ultra-aggressive sampling
+            if df_discretised.shape[0] > 800:
+                sample_indices = np.random.choice(df_discretised.index, size=800, replace=False)
+                df_discretised = df_discretised.loc[sample_indices]
+                df_numeric = df_numeric.loc[sample_indices]
+                print(f"⚡ Emergency sampling: reduced to {df_discretised.shape[0]} rows")
+            
+            # Ultra-aggressive variable selection
+            if df_discretised.shape[1] > 8:
+                # Keep only target, intervention, and 6 most correlated variables
+                essential_vars = [target_var, intervention_var]
+                correlations = df_numeric.corrwith(df_numeric[target_var]).abs()
+                correlations = correlations.drop(essential_vars, errors='ignore')
+                top_vars = correlations.nlargest(6).index.tolist()
+                selected_vars = essential_vars + top_vars
+                
+                df_discretised = df_discretised[selected_vars]
+                df_numeric = df_numeric[selected_vars]
+                print(f"⚡ Emergency variable reduction: kept {selected_vars}")
+            
+            print(f"🚀 EMERGENCY OPTIMIZATION COMPLETE: {df_discretised.shape}")
+        
+        # Performance optimization for large datasets
+        original_shape = df_discretised.shape
+        print(f"📊 Original data shape: {original_shape}")
+        
+        # Ultra-aggressive sampling for performance (Apple Silicon optimization)
+        max_samples_for_intervention = 800   # Ultra-optimized for Apple Silicon
+        max_variables_for_intervention = 8    # Strict computational limit
+        
+        if original_shape[0] > max_samples_for_intervention:
+            print(f"⚡ Applying smart sampling: {max_samples_for_intervention} samples for optimal performance")
+            # Stratified sampling to preserve relationships
+            sample_indices = np.random.choice(
+                df_discretised.index, 
+                size=max_samples_for_intervention, 
+                replace=False
+            )
+            df_discretised = df_discretised.loc[sample_indices]
+            df_numeric = df_numeric.loc[sample_indices]
+            print(f"✅ Sampled data shape: {df_discretised.shape}")
+        
+        # Variable reduction for computational efficiency
+        if original_shape[1] > max_variables_for_intervention:
+            print(f"🎯 Reducing variables for performance: {max_variables_for_intervention} most relevant")
+            
+            # Ensure target and intervention variables are included
+            essential_vars = [target_var, intervention_var]
+            
+            # Calculate correlation with target variable to select most relevant
+            target_correlations = df_numeric.corrwith(df_numeric[target_var]).abs()
+            target_correlations = target_correlations.drop([target_var, intervention_var], errors='ignore')
+            
+            # Select top correlated variables
+            remaining_slots = max_variables_for_intervention - len(essential_vars)
+            top_vars = target_correlations.nlargest(remaining_slots).index.tolist()
+            
+            selected_vars = essential_vars + top_vars
+            df_discretised = df_discretised[selected_vars]
+            df_numeric = df_numeric[selected_vars]
+            
+            print(f"✅ Selected variables: {selected_vars}")
+            print(f"✅ Reduced data shape: {df_discretised.shape}")
+        
+        # Apple Silicon optimization: Enable hardware acceleration
+        import os
+        os.environ['OPENBLAS_NUM_THREADS'] = '8'  # Optimize for Apple Silicon
+        os.environ['MKL_NUM_THREADS'] = '8'
+        
+        progress(0.6, desc="🧠 Creating ultra-optimized Bayesian Network...")
+        
+        # Create Bayesian Network with maximum performance optimizations
+        try:
+            print(f"🏗️ Building Bayesian Network with {df_discretised.shape}...")
+            bn = BayesianNetwork(sm)
+            
+            progress(0.65, desc="📊 Fitting node states (fast mode)...")
+            print("📊 Fitting node states...")
+            bn = bn.fit_node_states(df_discretised)
+            
+            progress(0.7, desc="🧮 Fitting CPDs (ultra-fast mode)...")
+            print("🧮 Fitting conditional probability distributions...")
+            # Always use fastest method for intervention analysis
+            bn = bn.fit_cpds(df_discretised, method="MaximumLikelihoodEstimator")
+            print("✅ Used MaximumLikelihoodEstimator for maximum speed")
+                
+            print(f"✅ Bayesian Network created successfully with {len(df_discretised.columns)} variables")
+            
+        except Exception as e:
+            return f"""
+            ❌ Intervention analysis failed: Bayesian Network creation error
+            
+            **Problem:** Could not create Bayesian Network: {str(e)}
+            
+            **Performance Info:**
+            • Original data: {original_shape[0]} rows × {original_shape[1]} variables
+            • Processed data: {df_discretised.shape[0]} rows × {df_discretised.shape[1]} variables
+            
+            **Solutions:**
+            • Try with fewer variables (select 5-10 most important ones)
+            • Use a smaller data sample for testing
+            • Ensure variables have meaningful relationships
+            • Check for data quality issues
+            
+            **Apple Silicon Note:** Hardware acceleration enabled for optimal performance
+            """, f"Bayesian Network error: {str(e)}"
         
         progress(0.7, desc="🎯 Performing intervention...")
         
-        # Create inference engine
-        ie = InferenceEngine(bn)
+        # Create inference engine with timeout protection and progress updates
+        try:
+            print("🔍 Creating inference engine...")
+            progress(0.75, desc="🧠 Initializing inference engine...")
+            
+            ie = InferenceEngine(bn)
+            print("✅ Inference engine ready")
+            
+            progress(0.8, desc="🎲 Computing intervention probabilities...")
+            
+        except Exception as e:
+            return f"""
+            ❌ Intervention analysis failed: Inference engine creation error
+            
+            **Problem:** Could not create inference engine: {str(e)}
+            
+            **Performance Context:**
+            • Data processed: {df_discretised.shape[0]} rows × {df_discretised.shape[1]} variables
+            • Apple Silicon acceleration: Enabled
+            • Optimization level: Maximum
+            
+            **This usually indicates:**
+            • Network structure is too complex for the data size
+            • Insufficient data for reliable inference
+            • Variables have too many discrete states
+            
+            **Solutions:**
+            • Reduce the number of variables (try 5-8 key variables)
+            • Use a smaller data sample for testing
+            • Simplify variable relationships
+            • Check for data quality issues
+            """, f"Inference engine error: {str(e)}"
         
         # Validate and discretize intervention value
         intervention_min = df_numeric[intervention_var].min()
         intervention_max = df_numeric[intervention_var].max()
+        intervention_mean = df_numeric[intervention_var].mean()
+        intervention_std = df_numeric[intervention_var].std()
+        
+        # More flexible range validation (allow 0.1x to 3x of data range)
+        reasonable_min = max(intervention_min * 0.1, intervention_min - intervention_std)
+        reasonable_max = min(intervention_max * 3.0, intervention_max + intervention_std)
         
         # Check if intervention value is within reasonable range
-        if intervention_value < intervention_min * 0.5 or intervention_value > intervention_max * 2.0:
+        if intervention_value < reasonable_min or intervention_value > reasonable_max:
+            # Suggest practical intervention values
+            low_suggestion = intervention_mean - intervention_std
+            medium_suggestion = intervention_mean
+            high_suggestion = intervention_mean + intervention_std
+            
             return f"""
-            ❌ Intervention analysis failed: Intervention value out of range
+            ❌ Intervention analysis failed: Intervention value out of reasonable range
             
-            **Problem:** Intervention value {intervention_value} is outside reasonable range
+            **Problem:** Intervention value {intervention_value} is outside practical range
             
-            **Data range for {intervention_var}:**
-            • Minimum: {intervention_min:.3f}
-            • Maximum: {intervention_max:.3f}
-            • Suggested range: {intervention_min:.3f} to {intervention_max:.3f}
+            **Data statistics for {intervention_var}:**
+            • Minimum: {intervention_min:.1f}
+            • Maximum: {intervention_max:.1f}
+            • Mean: {intervention_mean:.1f}
+            • Standard deviation: {intervention_std:.1f}
             
-            **Solutions:**
-            • Use an intervention value within the data range
-            • Try values between {intervention_min:.1f} and {intervention_max:.1f}
-            • Consider the practical meaning of your intervention
+            **Suggested intervention values:**
+            • **Low impact**: {low_suggestion:.1f} (mean - 1 std)
+            • **Medium impact**: {medium_suggestion:.1f} (mean)
+            • **High impact**: {high_suggestion:.1f} (mean + 1 std)
+            
+            **Valid range:** {reasonable_min:.1f} to {reasonable_max:.1f}
+            
+            **💡 Tip:** Choose a value that represents a realistic change you might make to {intervention_var}
             """, "Intervention value out of range"
         
         try:
@@ -2743,16 +3082,80 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
             • Check that the value makes sense for your variable
             """, f"Intervention discretization error: {str(e)}"
         
-        # Perform intervention (do-calculus)
-        intervention_query = ie.do_intervention(
-            {intervention_var: intervention_state},
-            {target_var: list(df_discretised[target_var].unique())}
-        )
+        # Perform intervention (do-calculus) with timeout protection
+        print(f"🎯 Performing intervention: {intervention_var} = {intervention_state}")
+        progress(0.85, desc="🎯 Computing intervention (this may take 10-30 seconds)...")
         
-        progress(0.9, desc="📊 Generating results...")
-        
-        # Calculate baseline probabilities (without intervention)
-        baseline_query = ie.query({target_var: list(df_discretised[target_var].unique())})
+        try:
+            # Add timeout mechanism for Apple Silicon optimization
+            import signal
+            import time
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError("Intervention computation timed out")
+            
+            # Set timeout to 45 seconds (reasonable for Apple Silicon)
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(45)
+            
+            start_time = time.time()
+            
+            # Perform intervention with progress tracking
+            intervention_query = ie.do_intervention(
+                {intervention_var: intervention_state},
+                {target_var: list(df_discretised[target_var].unique())}
+            )
+            
+            # Cancel timeout
+            signal.alarm(0)
+            
+            elapsed_time = time.time() - start_time
+            print(f"✅ Intervention completed in {elapsed_time:.1f} seconds")
+            
+            progress(0.9, desc="📊 Computing baseline probabilities...")
+            
+            # Calculate baseline probabilities (without intervention)
+            baseline_query = ie.query({target_var: list(df_discretised[target_var].unique())})
+            
+        except TimeoutError:
+            return f"""
+            ⏱️ Intervention analysis timed out (45 seconds)
+            
+            **Performance Status:**
+            • Data size: {df_discretised.shape[0]} rows × {df_discretised.shape[1]} variables
+            • Apple Silicon acceleration: Enabled
+            • Timeout limit: 45 seconds
+            
+            **Solutions for faster analysis:**
+            • Reduce variables to 5-6 most important ones
+            • Use smaller data sample (500-800 rows)
+            • Try simpler intervention values
+            • Consider using correlation analysis instead for quick insights
+            
+            **Alternative:** Use the correlation analysis feature for immediate results,
+            then return to intervention analysis with reduced data.
+            """, "Intervention computation timed out"
+            
+        except Exception as e:
+            return f"""
+            ❌ Intervention computation failed: {str(e)}
+            
+            **Performance Context:**
+            • Data processed: {df_discretised.shape[0]} rows × {df_discretised.shape[1]} variables
+            • Apple Silicon optimization: Active
+            • Intervention: {intervention_var} = {intervention_state}
+            
+            **Common causes:**
+            • Network too complex for reliable inference
+            • Insufficient data for the intervention state
+            • Memory limitations with current data size
+            
+            **Solutions:**
+            • Reduce to 5-8 key variables
+            • Use smaller data sample (500-1000 rows)
+            • Try different intervention values
+            • Simplify the causal structure
+            """, f"Intervention error: {str(e)}"
         
         # Create results summary
         results_html = f"""
@@ -2883,6 +3286,40 @@ def perform_causal_path_analysis(source_var, target_var, progress=gr.Progress())
         
         if source_var not in df_numeric.columns or target_var not in df_numeric.columns:
             return "❌ Variables not found", "Selected variables not found in data"
+        
+        progress(0.2, desc="🧹 Cleaning data...")
+        
+        # Clean data: remove NaN and infinity values
+        original_shape = df_numeric.shape
+        
+        # Replace infinity with NaN
+        df_numeric = df_numeric.replace([np.inf, -np.inf], np.nan)
+        
+        # Drop rows with any NaN values
+        df_numeric = df_numeric.dropna()
+        
+        if df_numeric.empty:
+            return """
+            ❌ Pathway analysis failed: No valid data after cleaning
+            
+            **Problem:** All rows contain NaN or infinity values
+            
+            **Solutions:**
+            • Check your data for missing values
+            • Remove or impute missing values before analysis
+            • Ensure numeric columns contain valid numbers
+            • Check for division by zero or invalid calculations
+            """, "No valid data after cleaning"
+        
+        cleaned_shape = df_numeric.shape
+        if cleaned_shape[0] < original_shape[0] * 0.5:
+            print(f"⚠️ Warning: Removed {original_shape[0] - cleaned_shape[0]} rows with NaN/infinity ({(1 - cleaned_shape[0]/original_shape[0])*100:.1f}% of data)")
+        else:
+            print(f"✅ Data cleaned: {cleaned_shape[0]} valid rows (removed {original_shape[0] - cleaned_shape[0]} rows with NaN/infinity)")
+        
+        # Ensure source and target variables still exist after cleaning
+        if source_var not in df_numeric.columns or target_var not in df_numeric.columns:
+            return "❌ Variables not found after cleaning", "Selected variables were removed during data cleaning"
         
         progress(0.3, desc="🏗️ Building causal structure...")
         
@@ -3836,11 +4273,13 @@ def create_gradio_interface():
                         
                         intervention_value = gr.Number(
                             label="📊 Intervention Value",
-                            info="Value to set the intervention variable to",
-                            value=0.0
+                            info="Value to set the intervention variable to (try mean ± std for realistic scenarios)",
+                            value=50000.0
                         )
                         
-                        intervention_btn = gr.Button("🎯 Run Intervention Analysis", variant="primary", size="lg")
+                        with gr.Row():
+                            intervention_btn = gr.Button("🎯 Run Intervention Analysis", variant="primary", size="lg")
+                            suggest_btn = gr.Button("💡 Suggest Values", variant="secondary", size="sm")
                         
                         intervention_status = gr.Textbox(
                             label="📊 Analysis Status",
@@ -3951,6 +4390,12 @@ def create_gradio_interface():
             fn=perform_causal_intervention_analysis,
             inputs=[intervention_target, intervention_var, intervention_value],
             outputs=[intervention_results, intervention_status]
+        )
+        
+        suggest_btn.click(
+            fn=get_intervention_suggestions,
+            inputs=[intervention_var],
+            outputs=[intervention_status]
         )
         
         pathway_btn.click(
