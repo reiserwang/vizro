@@ -52,6 +52,15 @@ def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_al
         # Get numeric data only
         df_numeric = dashboard_config.current_data.select_dtypes(include=[np.number])
         
+        # Initialize analysis properties
+        dashboard_config.analysis_properties = {'missing_values_imputed': False}
+
+        # Handle missing values by imputing with the mean
+        if df_numeric.isnull().sum().sum() > 0:
+            print("⚠️ Missing values detected. Imputing with mean.")
+            df_numeric = df_numeric.fillna(df_numeric.mean())
+            dashboard_config.analysis_properties['missing_values_imputed'] = True
+
         if df_numeric.empty:
             return None, None, "❌ No numeric columns found. Please ensure your data contains numeric variables for causal analysis."
         
@@ -206,6 +215,10 @@ def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_al
         ### 🏆 Top Relationships:
         """
         
+        # Add a note about missing value imputation if it occurred
+        if 'missing_values_imputed' in dashboard_config.analysis_properties and dashboard_config.analysis_properties['missing_values_imputed']:
+            summary += "\n*Note: Missing values were imputed using the mean.*\n"
+
         # Add top 3 relationships
         for i, row in results_df.head(3).iterrows():
             direction = "→" if row['correlation'] > 0 else "⟷"
@@ -616,6 +629,14 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
         
         # Get numeric data
         df_numeric = dashboard_config.current_data.select_dtypes(include=[np.number])
+
+        missing_values_imputed = False
+        # Handle missing values by imputing with the mean
+        if df_numeric.isnull().sum().sum() > 0:
+            print("⚠️ Missing values detected. Imputing with mean.")
+            df_numeric = df_numeric.fillna(df_numeric.mean())
+            missing_values_imputed = True
+
         if df_numeric.empty:
             return "❌ No numeric data found", "Please ensure your data contains numeric variables"
         
@@ -970,6 +991,7 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
             <h3>🎯 Causal Intervention Analysis</h3>
             
             <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                {'<p style="color: #e67e22;"><em>Note: Missing values were imputed using the mean.</em></p>' if missing_values_imputed else ''}
                 <h4>📋 Analysis Setup</h4>
                 <p><strong>Target Variable:</strong> {target_var}</p>
                 <p><strong>Intervention Variable:</strong> {intervention_var}</p>
