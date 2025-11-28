@@ -210,6 +210,16 @@ def create_gradio_interface():
                             info="Chart appearance theme"
                         )
                         
+                        correlation_window = gr.Slider(
+                            label="🪟 Correlation Window Size",
+                            minimum=0,
+                            maximum=200,
+                            value=0,
+                            step=1,
+                            info="Set window for rolling correlation. 0 to disable.",
+                            visible=False
+                        )
+
                         create_viz_btn = gr.Button(
                             "🎨 Create Visualization",
                             variant="primary",
@@ -450,9 +460,18 @@ def create_gradio_interface():
             outputs=[upload_status, x_axis, y_axis, color_var, data_preview]
         )
         
+        def update_correlation_window_visibility(chart_type_selection):
+            return gr.update(visible=chart_type_selection == 'Correlation Heatmap')
+
+        chart_type.change(
+            fn=update_correlation_window_visibility,
+            inputs=[chart_type],
+            outputs=[correlation_window]
+        )
+
         create_viz_btn.click(
             fn=create_vizro_enhanced_visualization if VIZRO_AVAILABLE else create_visualization,
-            inputs=[x_axis, y_axis, color_var, chart_type, viz_theme, y_axis_agg],
+            inputs=[x_axis, y_axis, color_var, chart_type, viz_theme, y_axis_agg, correlation_window],
             outputs=[viz_output]
         )
         
