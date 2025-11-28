@@ -95,7 +95,7 @@ def create_visualization(x_axis, y_axis, color_var, chart_type, theme, y_axis_ag
     except Exception as e:
         return None
 
-def create_vizro_enhanced_visualization(x_axis, y_axis, color_var, chart_type, theme, y_axis_agg):
+def create_vizro_enhanced_visualization(x_axis, y_axis, color_var, chart_type, theme, y_axis_agg, correlation_window=0):
     """Create enhanced visualization using Vizro capabilities"""
     
     if not VIZRO_AVAILABLE:
@@ -156,7 +156,7 @@ def create_vizro_enhanced_visualization(x_axis, y_axis, color_var, chart_type, t
         elif chart_type == 'Statistical Box Plot':
             return create_statistical_box_plot(df, x_axis, y_axis, color_var, chart_title_suffix, template)
         elif chart_type == 'Correlation Heatmap':
-            return create_correlation_heatmap(df, template)
+            return create_correlation_heatmap(df, template, window_size=correlation_window)
         elif chart_type == 'Distribution Analysis':
             return create_distribution_analysis(df, x_axis, y_axis, chart_title_suffix, template)
         elif chart_type == 'Time Series Analysis':
@@ -248,22 +248,28 @@ def create_statistical_box_plot(df, x_axis, y_axis, color_var, chart_title_suffi
     
     return apply_enhanced_layout(fig)
 
-def create_correlation_heatmap(df, template):
+def create_correlation_heatmap(df, template, window_size=0):
     """Create correlation heatmap for numeric columns"""
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     if len(numeric_cols) > 1:
-        corr_matrix = df[numeric_cols].corr()
-        
+        if window_size > 0:
+            # When using rolling correlation, a multi-level index is returned.
+            # We select the correlation matrix for the last window.
+            corr_matrix = df[numeric_cols].rolling(window=window_size).corr().iloc[-len(numeric_cols):]
+            title = f'Rolling Correlation Heatmap (Window Size: {window_size})'
+        else:
+            corr_matrix = df[numeric_cols].corr()
+            title = 'Correlation Heatmap'
+
         fig = px.imshow(corr_matrix,
-                      title='Correlation Heatmap',
-                      template=template,
-                      color_continuous_scale='RdBu_r',
-                      aspect="auto")
-        
-        # Add correlation values as text
+                        title=title,
+                        template=template,
+                        color_continuous_scale='RdBu_r',
+                        aspect="auto")
+
         fig.update_traces(text=np.around(corr_matrix.values, decimals=2),
-                        texttemplate="%{text}", textfont={"size": 10})
-        
+                          texttemplate="%{text}", textfont={"size": 10})
+
         return apply_enhanced_layout(fig)
     else:
         return None
