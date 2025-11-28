@@ -39,9 +39,9 @@ from engines.forecasting_engine import (
 
 from engines.causal_engine import (
     perform_causal_analysis_with_status,
-    perform_causal_intervention_analysis,
     export_results
 )
+from engines.causal_intervention import perform_causal_intervention_analysis
 
 def create_gradio_interface():
     """Create the main Gradio interface with modular components"""
