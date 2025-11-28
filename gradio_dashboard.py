@@ -1422,6 +1422,7 @@ def update_causal_dropdowns():
     
     if current_data is None:
         return (gr.update(choices=[], value=None), gr.update(choices=[], value=None), 
+                gr.update(choices=[], value=None), gr.update(choices=[], value=None),
                 gr.update(choices=[], value=None), gr.update(choices=[], value=None))
     
     # Get numeric columns for causal analysis
@@ -1431,7 +1432,9 @@ def update_causal_dropdowns():
         gr.update(choices=numeric_cols, value=numeric_cols[0] if numeric_cols else None),  # intervention_target
         gr.update(choices=numeric_cols, value=numeric_cols[1] if len(numeric_cols) > 1 else None),  # intervention_var
         gr.update(choices=numeric_cols, value=numeric_cols[0] if numeric_cols else None),  # pathway_source
-        gr.update(choices=numeric_cols, value=numeric_cols[1] if len(numeric_cols) > 1 else None)   # pathway_target
+        gr.update(choices=numeric_cols, value=numeric_cols[1] if len(numeric_cols) > 1 else None),  # pathway_target
+        gr.update(choices=numeric_cols, value=numeric_cols[0] if numeric_cols else None),  # lag_target
+        gr.update(choices=numeric_cols, value=numeric_cols[1] if len(numeric_cols) > 1 else None)   # lag_predictor
     )
 
 def create_forecast_summary(result, model_type, target_var, periods, confidence_level):
@@ -3474,6 +3477,287 @@ def perform_causal_path_analysis(source_var, target_var, progress=gr.Progress())
         error_msg = f"❌ Pathway analysis failed: {str(e)}"
         return error_msg, error_msg
 
+def perform_lag_analysis(target_var, predictor_var, max_lags, progress=gr.Progress()):
+    """Perform comprehensive lag analysis including Granger causality and cross-correlation"""
+    global current_data
+    
+    try:
+        progress(0.1, desc="⏱️ Analyzing lagged relationships...")
+        
+        if current_data is None:
+            return "❌ No data loaded", "Please upload data first"
+        
+        # Get numeric data
+        df_numeric = current_data.select_dtypes(include=[np.number])
+        if df_numeric.empty:
+            return "❌ No numeric data found", "Please ensure your data contains numeric variables"
+        
+        if target_var not in df_numeric.columns or predictor_var not in df_numeric.columns:
+            return "❌ Variables not found", "Selected variables not found in data"
+        
+        # Clean data
+        df_clean = df_numeric[[target_var, predictor_var]].replace([np.inf, -np.inf], np.nan).dropna()
+        
+        if len(df_clean) < max_lags + 10:
+            return f"""
+            ❌ Insufficient data for lag analysis
+            
+            **Problem:** Need at least {max_lags + 10} data points for {max_lags} lags
+            **Available:** {len(df_clean)} data points
+            
+            **Solutions:**
+            • Reduce maximum lags
+            • Use more data
+            • Remove missing values
+            """, "Insufficient data"
+        
+        progress(0.3, desc="📊 Computing cross-correlation...")
+        
+        # 1. Cross-Correlation Analysis
+        cross_corr_results = []
+        for lag in range(0, max_lags + 1):
+            if lag == 0:
+                corr = df_clean[target_var].corr(df_clean[predictor_var])
+            else:
+                # Shift predictor variable by lag periods
+                shifted = df_clean[predictor_var].shift(lag)
+                corr = df_clean[target_var].corr(shifted)
+            
+            cross_corr_results.append({
+                'lag': lag,
+                'correlation': corr
+            })
+        
+        cross_corr_df = pd.DataFrame(cross_corr_results)
+        
+        # Find optimal lag (highest absolute correlation)
+        optimal_lag = cross_corr_df.loc[cross_corr_df['correlation'].abs().idxmax()]
+        
+        progress(0.5, desc="🔍 Testing Granger causality...")
+        
+        # 2. Granger Causality Test
+        try:
+            from statsmodels.tsa.stattools import grangercausalitytests
+            
+            # Prepare data for Granger test
+            granger_data = df_clean[[target_var, predictor_var]].values
+            
+            # Run Granger causality test
+            granger_results = grangercausalitytests(granger_data, maxlag=max_lags, verbose=False)
+            
+            # Extract p-values
+            granger_summary = []
+            for lag in range(1, max_lags + 1):
+                # Get F-test p-value
+                p_value = granger_results[lag][0]['ssr_ftest'][1]
+                granger_summary.append({
+                    'lag': lag,
+                    'p_value': p_value,
+                    'significant': 'Yes' if p_value < 0.05 else 'No'
+                })
+            
+            granger_df = pd.DataFrame(granger_summary)
+            granger_available = True
+            
+        except ImportError:
+            granger_available = False
+            granger_df = None
+        except Exception as e:
+            print(f"⚠️ Granger causality test failed: {e}")
+            granger_available = False
+            granger_df = None
+        
+        progress(0.7, desc="📈 Creating visualizations...")
+        
+        # 3. Create Cross-Correlation Plot
+        fig_cross_corr = go.Figure()
+        
+        fig_cross_corr.add_trace(go.Bar(
+            x=cross_corr_df['lag'],
+            y=cross_corr_df['correlation'],
+            marker=dict(
+                color=cross_corr_df['correlation'],
+                colorscale='RdBu',
+                cmin=-1,
+                cmax=1,
+                colorbar=dict(title="Correlation")
+            ),
+            text=[f"{c:.3f}" for c in cross_corr_df['correlation']],
+            textposition='outside',
+            hovertemplate='Lag: %{x}<br>Correlation: %{y:.3f}<extra></extra>'
+        ))
+        
+        fig_cross_corr.update_layout(
+            title=f"Cross-Correlation: {predictor_var} → {target_var}",
+            xaxis_title="Lag (time periods)",
+            yaxis_title="Correlation Coefficient",
+            height=400,
+            showlegend=False
+        )
+        
+        # Add horizontal line at y=0
+        fig_cross_corr.add_hline(y=0, line_dash="dash", line_color="gray")
+        
+        # 4. Create Lagged Scatter Plots
+        fig_scatter = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=[f'Lag {i}' for i in range(4)],
+            vertical_spacing=0.15,
+            horizontal_spacing=0.1
+        )
+        
+        for idx, lag in enumerate(range(4)):
+            row = idx // 2 + 1
+            col = idx % 2 + 1
+            
+            if lag == 0:
+                x_data = df_clean[predictor_var]
+                y_data = df_clean[target_var]
+            else:
+                x_data = df_clean[predictor_var].shift(lag)
+                y_data = df_clean[target_var]
+                # Remove NaN from shifting
+                mask = ~(x_data.isna() | y_data.isna())
+                x_data = x_data[mask]
+                y_data = y_data[mask]
+            
+            corr = x_data.corr(y_data)
+            
+            fig_scatter.add_trace(
+                go.Scatter(
+                    x=x_data,
+                    y=y_data,
+                    mode='markers',
+                    marker=dict(size=5, opacity=0.6),
+                    name=f'Lag {lag}',
+                    hovertemplate=f'{predictor_var} (t-{lag}): %{{x:.2f}}<br>{target_var} (t): %{{y:.2f}}<extra></extra>'
+                ),
+                row=row, col=col
+            )
+            
+            # Add correlation annotation
+            fig_scatter.add_annotation(
+                text=f'r = {corr:.3f}',
+                xref=f'x{idx+1}', yref=f'y{idx+1}',
+                x=0.05, y=0.95,
+                xanchor='left', yanchor='top',
+                showarrow=False,
+                bgcolor='rgba(255,255,255,0.8)',
+                bordercolor='gray',
+                borderwidth=1
+            )
+        
+        fig_scatter.update_xaxes(title_text=predictor_var)
+        fig_scatter.update_yaxes(title_text=target_var)
+        fig_scatter.update_layout(
+            title=f"Lagged Relationships: {predictor_var} → {target_var}",
+            height=600,
+            showlegend=False
+        )
+        
+        progress(0.9, desc="📋 Generating results...")
+        
+        # 5. Create Results HTML
+        results_html = f"""
+        <div style="background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h3>⏱️ Lag Analysis Results</h3>
+            
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>📋 Analysis Setup</h4>
+                <p><strong>Target Variable:</strong> {target_var}</p>
+                <p><strong>Predictor Variable:</strong> {predictor_var}</p>
+                <p><strong>Maximum Lags:</strong> {max_lags}</p>
+                <p><strong>Data Points:</strong> {len(df_clean)}</p>
+            </div>
+            
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>🎯 Optimal Lag</h4>
+                <p><strong>Best Lag Period:</strong> {int(optimal_lag['lag'])} time periods</p>
+                <p><strong>Correlation at Optimal Lag:</strong> {optimal_lag['correlation']:.4f}</p>
+                <p style="color: {'green' if abs(optimal_lag['correlation']) > 0.3 else 'orange'};">
+                    <strong>Strength:</strong> {'Strong' if abs(optimal_lag['correlation']) > 0.5 else 'Moderate' if abs(optimal_lag['correlation']) > 0.3 else 'Weak'}
+                </p>
+            </div>
+        """
+        
+        if granger_available and granger_df is not None:
+            significant_lags = granger_df[granger_df['significant'] == 'Yes']
+            
+            results_html += f"""
+            <div style="background: #f3e5f5; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>🔍 Granger Causality Test</h4>
+                <p><strong>Null Hypothesis:</strong> {predictor_var} does NOT Granger-cause {target_var}</p>
+                <p><strong>Significant Lags (p < 0.05):</strong> {len(significant_lags)} out of {max_lags}</p>
+                
+                <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                    <tr style="background: #e0e0e0;">
+                        <th style="padding: 8px; border: 1px solid #ddd;">Lag</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">P-value</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Significant</th>
+                    </tr>
+            """
+            
+            for _, row in granger_df.iterrows():
+                color = '#d4edda' if row['significant'] == 'Yes' else '#f8d7da'
+                results_html += f"""
+                    <tr style="background: {color};">
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{int(row['lag'])}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{row['p_value']:.4f}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{row['significant']}</td>
+                    </tr>
+                """
+            
+            results_html += """
+                </table>
+                
+                <p style="margin-top: 10px; font-size: 0.9em; color: #666;">
+                    <strong>Interpretation:</strong> If p-value < 0.05, past values of {predictor_var} 
+                    significantly help predict future values of {target_var} at that lag.
+                </p>
+            </div>
+            """.format(predictor_var=predictor_var, target_var=target_var)
+        else:
+            results_html += """
+            <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>⚠️ Granger Causality Test Unavailable</h4>
+                <p>Install statsmodels for Granger causality testing:</p>
+                <code>pip install statsmodels</code>
+            </div>
+            """
+        
+        results_html += f"""
+            <div style="background: #fff3e0; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>💡 Interpretation Guide</h4>
+                <ul>
+                    <li><strong>Cross-Correlation:</strong> Measures linear relationship at different lags</li>
+                    <li><strong>Positive Correlation:</strong> {predictor_var} increases → {target_var} increases</li>
+                    <li><strong>Negative Correlation:</strong> {predictor_var} increases → {target_var} decreases</li>
+                    <li><strong>Lag Period:</strong> Time delay between cause and effect</li>
+                    <li><strong>Granger Causality:</strong> Tests if past values help predict future values</li>
+                </ul>
+            </div>
+            
+            <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>📊 Key Findings</h4>
+                <p>• <strong>Strongest relationship</strong> occurs at lag {int(optimal_lag['lag'])} with correlation {optimal_lag['correlation']:.3f}</p>
+                <p>• This suggests {predictor_var} affects {target_var} with a delay of {int(optimal_lag['lag'])} time period(s)</p>
+                {'<p>• <strong>Granger causality confirmed</strong> at ' + str(len(significant_lags)) + ' lag(s)</p>' if granger_available and granger_df is not None and len(significant_lags) > 0 else ''}
+            </div>
+        </div>
+        """
+        
+        progress(1.0, desc="✅ Lag analysis complete!")
+        
+        # Return both plots and results
+        return fig_cross_corr, fig_scatter, results_html, "✅ Lag analysis completed successfully!"
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        progress(1.0, desc="❌ Analysis failed")
+        error_msg = f"❌ Lag analysis failed: {str(e)}"
+        return None, None, error_msg, error_msg
+
 def perform_causal_discovery_comparison(progress=gr.Progress()):
     """Compare different causal discovery algorithms"""
     global current_data
@@ -3947,7 +4231,15 @@ def create_gradio_interface():
     }
     """
     
-    with gr.Blocks(css=css, title="🔍 Dynamic Data Analysis Dashboard", theme=gr.themes.Soft()) as demo:
+    # Create Gradio interface (compatible with older versions)
+    with gr.Blocks(title="🔍 Dynamic Data Analysis Dashboard") as demo:
+        
+        # Add custom CSS via HTML style tag (compatible with all Gradio versions)
+        gr.HTML(f"""
+        <style>
+        {css}
+        </style>
+        """)
         
         # Header
         gr.HTML("""
@@ -4325,6 +4617,69 @@ def create_gradio_interface():
                     with gr.Column(scale=2):
                         pathway_results = gr.HTML(label="🛤️ Pathway Analysis Results")
             
+            with gr.TabItem("⏱️ Lag Analysis", id="lag_tab"):
+                gr.Markdown("## Lagged Causal Relationships")
+                gr.Markdown("*Discover time-delayed effects between variables. Understand how changes in one variable affect another after a delay.*")
+                
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown("### ⏱️ Lag Analysis Setup")
+                        
+                        lag_target = gr.Dropdown(
+                            label="🎯 Target Variable",
+                            info="Variable to be predicted/explained",
+                            choices=[],
+                            interactive=True
+                        )
+                        
+                        lag_predictor = gr.Dropdown(
+                            label="📊 Predictor Variable",
+                            info="Variable that may have lagged effect",
+                            choices=[],
+                            interactive=True
+                        )
+                        
+                        max_lags = gr.Slider(
+                            minimum=1,
+                            maximum=20,
+                            value=10,
+                            step=1,
+                            label="⏰ Maximum Lags",
+                            info="Maximum time periods to test for delayed effects"
+                        )
+                        
+                        lag_btn = gr.Button("⏱️ Analyze Lags", variant="primary", size="lg")
+                        
+                        lag_status = gr.Textbox(
+                            label="📊 Analysis Status",
+                            value="Ready to analyze lagged relationships...",
+                            interactive=False,
+                            lines=2
+                        )
+                        
+                        gr.Markdown("""
+                        ### 💡 About Lag Analysis
+                        
+                        **Cross-Correlation**: Measures how variables relate at different time delays
+                        
+                        **Granger Causality**: Tests if past values of predictor help forecast target
+                        
+                        **Use Cases**:
+                        - Economic indicators (GDP → consumption)
+                        - Marketing effects (ads → sales)
+                        - Policy impacts (regulation → behavior)
+                        """)
+                    
+                    with gr.Column(scale=2):
+                        gr.Markdown("### 📊 Cross-Correlation Analysis")
+                        lag_cross_corr_plot = gr.Plot(label="Cross-Correlation by Lag")
+                        
+                        gr.Markdown("### 🔍 Lagged Scatter Plots")
+                        lag_scatter_plot = gr.Plot(label="Relationships at Different Lags")
+                        
+                        gr.Markdown("### 📋 Detailed Results")
+                        lag_results = gr.HTML(label="⏱️ Lag Analysis Results")
+            
             with gr.TabItem("🔬 Algorithm Comparison", id="comparison_tab"):
                 gr.Markdown("## Causal Discovery Algorithm Comparison")
                 gr.Markdown("*Compare different causal discovery approaches to understand the robustness of your findings.*")
@@ -4404,6 +4759,12 @@ def create_gradio_interface():
             outputs=[pathway_results, pathway_status]
         )
         
+        lag_btn.click(
+            fn=perform_lag_analysis,
+            inputs=[lag_target, lag_predictor, max_lags],
+            outputs=[lag_cross_corr_plot, lag_scatter_plot, lag_results, lag_status]
+        )
+        
         comparison_btn.click(
             fn=perform_causal_discovery_comparison,
             outputs=[comparison_results, comparison_status]
@@ -4418,9 +4779,9 @@ def create_gradio_interface():
         
         # Update causal analysis dropdowns when data is loaded
         file_input.change(
-            fn=lambda file_path: update_causal_dropdowns() if file_path else (gr.update(), gr.update(), gr.update(), gr.update()),
+            fn=lambda file_path: update_causal_dropdowns() if file_path else (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()),
             inputs=[file_input],
-            outputs=[intervention_target, intervention_var, pathway_source, pathway_target]
+            outputs=[intervention_target, intervention_var, pathway_source, pathway_target, lag_target, lag_predictor]
         )
         
         # Forecasting event handler
