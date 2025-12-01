@@ -3478,26 +3478,49 @@ def perform_causal_path_analysis(source_var, target_var, progress=gr.Progress())
         return error_msg, error_msg
 
 def perform_lag_analysis(target_var, predictor_var, max_lags, progress=gr.Progress()):
-    """Perform comprehensive lag analysis including Granger causality and cross-correlation"""
+    """
+    Perform comprehensive lag analysis combining three complementary methods:
+    
+    1. Cross-Correlation Functions: Identify timing and strength of relationships
+    2. Granger Causality Tests: Confirm statistical significance of predictive power
+    3. VAR Models: Quantify dynamic effects and bidirectional relationships
+    
+    Args:
+        target_var (str): Variable to be predicted/explained
+        predictor_var (str): Variable that may have lagged effect
+        max_lags (int): Maximum number of time periods to test
+        progress: Gradio progress tracker
+        
+    Returns:
+        tuple: (cross_corr_plot, scatter_plot, results_html, status_message)
+    """
     global current_data
     
     try:
         progress(0.1, desc="⏱️ Analyzing lagged relationships...")
         
+        # ============================================================================
+        # DATA VALIDATION AND PREPARATION
+        # ============================================================================
+        
         if current_data is None:
             return "❌ No data loaded", "Please upload data first"
         
-        # Get numeric data
+        # Extract numeric columns only (lag analysis requires numeric data)
         df_numeric = current_data.select_dtypes(include=[np.number])
         if df_numeric.empty:
             return "❌ No numeric data found", "Please ensure your data contains numeric variables"
         
+        # Verify selected variables exist in the dataset
         if target_var not in df_numeric.columns or predictor_var not in df_numeric.columns:
             return "❌ Variables not found", "Selected variables not found in data"
         
-        # Clean data
+        # Clean data: remove infinity values and missing data
+        # This is critical for time series analysis to avoid computational errors
         df_clean = df_numeric[[target_var, predictor_var]].replace([np.inf, -np.inf], np.nan).dropna()
         
+        # Check if we have sufficient data points for the requested lag analysis
+        # Rule: Need at least (max_lags + 10) points for reliable results
         if len(df_clean) < max_lags + 10:
             return f"""
             ❌ Insufficient data for lag analysis
@@ -3513,13 +3536,21 @@ def perform_lag_analysis(target_var, predictor_var, max_lags, progress=gr.Progre
         
         progress(0.3, desc="📊 Computing cross-correlation...")
         
-        # 1. Cross-Correlation Analysis
+        # ============================================================================
+        # METHOD 1: CROSS-CORRELATION ANALYSIS
+        # ============================================================================
+        # Purpose: Identify at which lag the predictor has strongest relationship with target
+        # Method: Compute Pearson correlation between target(t) and predictor(t-k) for k=0 to max_lags
+        # Output: Correlation coefficient for each lag
+        
         cross_corr_results = []
         for lag in range(0, max_lags + 1):
             if lag == 0:
+                # Lag 0: Contemporaneous correlation (same time period)
                 corr = df_clean[target_var].corr(df_clean[predictor_var])
             else:
-                # Shift predictor variable by lag periods
+                # Lag k: Correlation between target(t) and predictor(t-k)
+                # shift() moves data forward, so predictor(t-k) aligns with target(t)
                 shifted = df_clean[predictor_var].shift(lag)
                 corr = df_clean[target_var].corr(shifted)
             
@@ -3530,25 +3561,35 @@ def perform_lag_analysis(target_var, predictor_var, max_lags, progress=gr.Progre
         
         cross_corr_df = pd.DataFrame(cross_corr_results)
         
-        # Find optimal lag (highest absolute correlation)
+        # Identify optimal lag: the lag with highest absolute correlation
+        # We use absolute value because both positive and negative correlations are meaningful
         optimal_lag = cross_corr_df.loc[cross_corr_df['correlation'].abs().idxmax()]
         
         progress(0.5, desc="🔍 Testing Granger causality...")
         
-        # 2. Granger Causality Test
+        # ============================================================================
+        # METHOD 2: GRANGER CAUSALITY TEST
+        # ============================================================================
+        # Purpose: Test if past values of predictor significantly help forecast target
+        # Null Hypothesis: Predictor does NOT Granger-cause target
+        # Method: Compare restricted model (only past target) vs unrestricted (past target + predictor)
+        # Output: P-values for F-test at each lag (p < 0.05 = reject null = significant causality)
+        
         try:
             from statsmodels.tsa.stattools import grangercausalitytests
             
-            # Prepare data for Granger test
+            # Prepare data: statsmodels expects numpy array with [target, predictor] columns
             granger_data = df_clean[[target_var, predictor_var]].values
             
-            # Run Granger causality test
+            # Run Granger causality test for all lags from 1 to max_lags
+            # verbose=False suppresses detailed output
             granger_results = grangercausalitytests(granger_data, maxlag=max_lags, verbose=False)
             
-            # Extract p-values
+            # Extract p-values from F-test results
+            # granger_results[lag][0]['ssr_ftest'] returns (F-statistic, p-value, df_denom, df_num)
             granger_summary = []
             for lag in range(1, max_lags + 1):
-                # Get F-test p-value
+                # Get F-test p-value (index [1] of the tuple)
                 p_value = granger_results[lag][0]['ssr_ftest'][1]
                 granger_summary.append({
                     'lag': lag,
@@ -3567,9 +3608,105 @@ def perform_lag_analysis(target_var, predictor_var, max_lags, progress=gr.Progre
             granger_available = False
             granger_df = None
         
+        progress(0.6, desc="� Fitating VAR model...")
+        
+        # 3. VAR (Vector Autoregression) Model Analysis
+        var_results = None
+        var_available = False
+        optimal_var_lag = None
+        var_forecast = None
+        
+        try:
+            from statsmodels.tsa.api import VAR
+            from statsmodels.tsa.stattools import adfuller
+            
+            # ====================================================================
+            # VAR DATA PREPARATION
+            # ====================================================================
+            # Prepare data for VAR: needs both variables as columns
+            # VAR models the joint dynamics of multiple time series
+            var_data = df_clean[[target_var, predictor_var]].values
+            
+            # Initialize VAR model
+            model = VAR(var_data)
+            
+            # ====================================================================
+            # OPTIMAL LAG SELECTION
+            # ====================================================================
+            # Select optimal lag order using information criteria
+            # AIC (Akaike Information Criterion) balances fit and complexity
+            # Lower AIC = better model
+            lag_order_results = model.select_order(maxlags=min(max_lags, 10))
+            optimal_var_lag = lag_order_results.aic
+            
+            # Fit VAR model with the optimal lag order
+            # This estimates all coefficients in the system of equations
+            var_fitted = model.fit(optimal_var_lag)
+            
+            # ====================================================================
+            # MODEL FIT STATISTICS
+            # ====================================================================
+            # Store model fit statistics for comparison and validation
+            var_results = {
+                'optimal_lag': optimal_var_lag,
+                'aic': var_fitted.aic,      # Akaike Information Criterion
+                'bic': var_fitted.bic,      # Bayesian Information Criterion (penalizes complexity more)
+                'fpe': var_fitted.fpe,      # Final Prediction Error
+                'hqic': var_fitted.hqic     # Hannan-Quinn Information Criterion
+            }
+            
+            # Get coefficient matrix for interpretation
+            # Shows how each variable depends on past values of all variables
+            var_coefs = var_fitted.params
+            
+            # ====================================================================
+            # IMPULSE RESPONSE FUNCTION (IRF)
+            # ====================================================================
+            # Purpose: Trace out the effect of a one-unit shock in predictor on target over time
+            # This shows how effects propagate and persist through the system
+            irf = var_fitted.irf(periods=max_lags)
+            
+            # Extract impulse response of target to predictor shock
+            # irf.irfs has shape: (periods, n_variables, n_variables)
+            # Dimensions: [time, response_variable, shock_variable]
+            predictor_idx = 1  # predictor is second column in our data
+            target_idx = 0     # target is first column in our data
+            impulse_response = irf.irfs[:, target_idx, predictor_idx]
+            
+            # Store impulse response and cumulative effect
+            var_results['impulse_response'] = impulse_response
+            # Cumulative effect: sum of all impulse responses up to each period
+            # This shows the total accumulated impact over time
+            var_results['cumulative_effect'] = impulse_response.cumsum()
+            
+            # ====================================================================
+            # FORECASTING (Optional - for validation)
+            # ====================================================================
+            # Generate forecast for next few periods
+            forecast_steps = min(5, max_lags)
+            # Forecast requires last 'optimal_var_lag' observations as input
+            var_forecast = var_fitted.forecast(var_data[-optimal_var_lag:], steps=forecast_steps)
+            
+            var_available = True
+            print(f"✅ VAR model fitted with optimal lag: {optimal_var_lag}")
+            
+        except ImportError:
+            print("⚠️ VAR analysis requires statsmodels")
+            var_available = False
+        except Exception as e:
+            print(f"⚠️ VAR model fitting failed: {e}")
+            var_available = False
+        
         progress(0.7, desc="📈 Creating visualizations...")
         
-        # 3. Create Cross-Correlation Plot
+        # ============================================================================
+        # VISUALIZATION 1: CROSS-CORRELATION BAR CHART
+        # ============================================================================
+        # Purpose: Show correlation strength at each lag visually
+        # X-axis: Lag periods (0 to max_lags)
+        # Y-axis: Correlation coefficient (-1 to +1)
+        # Color: Gradient from red (negative) to blue (positive)
+        
         fig_cross_corr = go.Figure()
         
         fig_cross_corr.add_trace(go.Bar(
@@ -3725,23 +3862,95 @@ def perform_lag_analysis(target_var, predictor_var, max_lags, progress=gr.Progre
             </div>
             """
         
+        # Add VAR Model Results
+        if var_available and var_results is not None:
+            results_html += f"""
+            <div style="background: #e1f5fe; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>🔬 VAR Model Analysis</h4>
+                <p><strong>Model Type:</strong> Vector Autoregression (VAR)</p>
+                <p><strong>Optimal Lag Order:</strong> {var_results['optimal_lag']} (selected by AIC)</p>
+                
+                <h5 style="margin-top: 15px;">📊 Model Fit Statistics</h5>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                    <tr style="background: #e0e0e0;">
+                        <th style="padding: 8px; border: 1px solid #ddd;">Criterion</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Value</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Interpretation</th>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd;">AIC</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{var_results['aic']:.4f}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; font-size: 0.9em;">Lower is better</td>
+                    </tr>
+                    <tr style="background: #f5f5f5;">
+                        <td style="padding: 8px; border: 1px solid #ddd;">BIC</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{var_results['bic']:.4f}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; font-size: 0.9em;">Lower is better</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #ddd;">FPE</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{var_results['fpe']:.4f}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; font-size: 0.9em;">Final Prediction Error</td>
+                    </tr>
+                    <tr style="background: #f5f5f5;">
+                        <td style="padding: 8px; border: 1px solid #ddd;">HQIC</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{var_results['hqic']:.4f}</td>
+                        <td style="padding: 8px; border: 1px solid #ddd; font-size: 0.9em;">Hannan-Quinn IC</td>
+                    </tr>
+                </table>
+                
+                <h5 style="margin-top: 15px;">📈 Impulse Response Analysis</h5>
+                <p><strong>Cumulative Effect:</strong> {var_results['cumulative_effect'][-1]:.4f}</p>
+                <p style="font-size: 0.9em; color: #666;">
+                    This shows the total accumulated effect of a one-unit shock in {predictor_var} 
+                    on {target_var} over {max_lags} periods.
+                </p>
+                
+                <p style="margin-top: 10px; font-size: 0.9em; color: #666;">
+                    <strong>VAR Model Benefits:</strong>
+                    • Captures bidirectional relationships
+                    • Models dynamic interactions over time
+                    • Provides impulse response functions
+                    • Enables multivariate forecasting
+                </p>
+            </div>
+            """
+        else:
+            results_html += """
+            <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>⚠️ VAR Model Analysis Unavailable</h4>
+                <p>Install statsmodels for VAR model analysis:</p>
+                <code>pip install statsmodels</code>
+            </div>
+            """
+        
         results_html += f"""
             <div style="background: #fff3e0; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                <h4>💡 Interpretation Guide</h4>
+                <h4>💡 Comprehensive Interpretation Guide</h4>
                 <ul>
                     <li><strong>Cross-Correlation:</strong> Measures linear relationship at different lags</li>
                     <li><strong>Positive Correlation:</strong> {predictor_var} increases → {target_var} increases</li>
                     <li><strong>Negative Correlation:</strong> {predictor_var} increases → {target_var} decreases</li>
                     <li><strong>Lag Period:</strong> Time delay between cause and effect</li>
-                    <li><strong>Granger Causality:</strong> Tests if past values help predict future values</li>
+                    <li><strong>Granger Causality:</strong> Tests if past values help predict future values (p < 0.05 = significant)</li>
+                    <li><strong>VAR Model:</strong> Captures dynamic interactions and bidirectional effects</li>
+                    <li><strong>Impulse Response:</strong> Shows how shocks propagate through the system over time</li>
                 </ul>
             </div>
             
             <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                <h4>📊 Key Findings</h4>
-                <p>• <strong>Strongest relationship</strong> occurs at lag {int(optimal_lag['lag'])} with correlation {optimal_lag['correlation']:.3f}</p>
-                <p>• This suggests {predictor_var} affects {target_var} with a delay of {int(optimal_lag['lag'])} time period(s)</p>
-                {'<p>• <strong>Granger causality confirmed</strong> at ' + str(len(significant_lags)) + ' lag(s)</p>' if granger_available and granger_df is not None and len(significant_lags) > 0 else ''}
+                <h4>📊 Key Findings Summary</h4>
+                <p>• <strong>Cross-Correlation:</strong> Strongest relationship at lag {int(optimal_lag['lag'])} with correlation {optimal_lag['correlation']:.3f}</p>
+                <p>• <strong>Time Delay:</strong> {predictor_var} affects {target_var} with a delay of {int(optimal_lag['lag'])} time period(s)</p>
+                {'<p>• <strong>Granger Causality:</strong> Confirmed at ' + str(len(significant_lags)) + ' lag(s) - past values significantly predict future</p>' if granger_available and granger_df is not None and len(significant_lags) > 0 else ''}
+                {'<p>• <strong>VAR Model:</strong> Optimal lag order is ' + str(var_results['optimal_lag']) + ' with cumulative effect of ' + f"{var_results['cumulative_effect'][-1]:.3f}" + '</p>' if var_available and var_results is not None else ''}
+                
+                <p style="margin-top: 15px; padding: 10px; background: #fff9c4; border-left: 4px solid #fbc02d;">
+                    <strong>🎯 Combined Analysis:</strong> This comprehensive approach uses three complementary methods:
+                    <br>1. <strong>Cross-correlation</strong> identifies timing
+                    <br>2. <strong>Granger tests</strong> confirm predictive power
+                    <br>3. <strong>VAR models</strong> quantify dynamic effects
+                </p>
             </div>
         </div>
         """
@@ -3757,6 +3966,291 @@ def perform_lag_analysis(target_var, predictor_var, max_lags, progress=gr.Progre
         progress(1.0, desc="❌ Analysis failed")
         error_msg = f"❌ Lag analysis failed: {str(e)}"
         return None, None, error_msg, error_msg
+
+def auto_discover_lagged_relationships(max_lags, correlation_threshold, progress=gr.Progress()):
+    """Automatically discover all significant lagged causal relationships"""
+    global current_data
+    
+    try:
+        progress(0.05, desc="🔍 Starting auto-discovery...")
+        
+        if current_data is None:
+            return None, "❌ No data loaded", "Please upload data first"
+        
+        # Get numeric data
+        df_numeric = current_data.select_dtypes(include=[np.number])
+        if df_numeric.empty:
+            return None, "❌ No numeric data found", "Please ensure your data contains numeric variables"
+        
+        # Clean data
+        df_clean = df_numeric.replace([np.inf, -np.inf], np.nan).dropna()
+        
+        if len(df_clean) < max_lags + 10:
+            return None, f"""
+            ❌ Insufficient data for auto-discovery
+            
+            **Problem:** Need at least {max_lags + 10} data points for {max_lags} lags
+            **Available:** {len(df_clean)} data points
+            
+            **Solutions:**
+            • Reduce maximum lags
+            • Use more data
+            """, "Insufficient data"
+        
+        # Limit variables for performance
+        max_vars = 10
+        if len(df_clean.columns) > max_vars:
+            # Select most variable columns
+            variances = df_clean.var().sort_values(ascending=False)
+            selected_cols = variances.head(max_vars).index.tolist()
+            df_clean = df_clean[selected_cols]
+            print(f"⚡ Limited to {max_vars} most variable columns for performance")
+        
+        variables = df_clean.columns.tolist()
+        total_pairs = len(variables) * (len(variables) - 1)
+        
+        progress(0.1, desc=f"🔍 Testing {total_pairs} variable pairs...")
+        
+        # Find all significant lagged relationships
+        significant_lags = []
+        pair_count = 0
+        
+        for target_var in variables:
+            for predictor_var in variables:
+                if target_var == predictor_var:
+                    continue
+                
+                pair_count += 1
+                progress_val = 0.1 + (0.8 * pair_count / total_pairs)
+                progress(progress_val, desc=f"Testing {predictor_var} → {target_var}...")
+                
+                try:
+                    # Compute cross-correlation for all lags
+                    best_lag = 0
+                    best_corr = 0
+                    
+                    for lag in range(0, max_lags + 1):
+                        if lag == 0:
+                            corr = df_clean[target_var].corr(df_clean[predictor_var])
+                        else:
+                            shifted = df_clean[predictor_var].shift(lag)
+                            corr = df_clean[target_var].corr(shifted)
+                        
+                        if abs(corr) > abs(best_corr):
+                            best_corr = corr
+                            best_lag = lag
+                    
+                    # Check if significant
+                    if abs(best_corr) >= correlation_threshold:
+                        significant_lags.append({
+                            'predictor': predictor_var,
+                            'target': target_var,
+                            'optimal_lag': best_lag,
+                            'correlation': best_corr,
+                            'abs_correlation': abs(best_corr),
+                            'direction': 'Positive' if best_corr > 0 else 'Negative'
+                        })
+                
+                except Exception as e:
+                    print(f"⚠️ Error testing {predictor_var} → {target_var}: {e}")
+                    continue
+        
+        progress(0.9, desc="📊 Creating results...")
+        
+        if not significant_lags:
+            results_html = f"""
+            <div style="background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                <h3>🔍 Auto-Discovery Results</h3>
+                
+                <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                    <h4>⚠️ No Significant Lagged Relationships Found</h4>
+                    <p><strong>Tested:</strong> {total_pairs} variable pairs</p>
+                    <p><strong>Max Lags:</strong> {max_lags}</p>
+                    <p><strong>Threshold:</strong> {correlation_threshold:.2f}</p>
+                    
+                    <p style="margin-top: 15px;"><strong>Suggestions:</strong></p>
+                    <ul>
+                        <li>Lower the correlation threshold</li>
+                        <li>Increase maximum lags</li>
+                        <li>Check if relationships are non-linear</li>
+                        <li>Ensure sufficient data variation</li>
+                    </ul>
+                </div>
+            </div>
+            """
+            
+            return None, results_html, "No significant lagged relationships found"
+        
+        # Sort by absolute correlation
+        significant_lags.sort(key=lambda x: x['abs_correlation'], reverse=True)
+        
+        # Create results DataFrame
+        results_df = pd.DataFrame(significant_lags)
+        
+        # Create network visualization
+        fig_network = go.Figure()
+        
+        # Create graph for layout
+        G = nx.DiGraph()
+        for rel in significant_lags[:20]:  # Limit to top 20 for clarity
+            G.add_edge(rel['predictor'], rel['target'], 
+                      weight=rel['abs_correlation'],
+                      lag=rel['optimal_lag'])
+        
+        # Layout
+        pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
+        
+        # Add edges
+        for rel in significant_lags[:20]:
+            x0, y0 = pos[rel['predictor']]
+            x1, y1 = pos[rel['target']]
+            
+            color = '#2E8B57' if rel['correlation'] > 0 else '#CD5C5C'
+            width = min(5, 1 + rel['abs_correlation'] * 5)
+            
+            fig_network.add_trace(go.Scatter(
+                x=[x0, x1, None],
+                y=[y0, y1, None],
+                mode='lines',
+                line=dict(width=width, color=color),
+                hovertext=f"{rel['predictor']} → {rel['target']}<br>Lag: {rel['optimal_lag']}<br>Corr: {rel['correlation']:.3f}",
+                hoverinfo='text',
+                showlegend=False
+            ))
+        
+        # Add nodes
+        node_x = []
+        node_y = []
+        node_text = []
+        node_info = []
+        
+        for node in G.nodes():
+            x, y = pos[node]
+            node_x.append(x)
+            node_y.append(y)
+            node_text.append(node[:15] + "..." if len(node) > 15 else node)
+            
+            in_degree = G.in_degree(node)
+            out_degree = G.out_degree(node)
+            node_info.append(f"<b>{node}</b><br>Incoming: {in_degree}<br>Outgoing: {out_degree}")
+        
+        fig_network.add_trace(go.Scatter(
+            x=node_x,
+            y=node_y,
+            mode='markers+text',
+            marker=dict(size=20, color='lightblue', line=dict(width=2, color='white')),
+            text=node_text,
+            textposition="middle center",
+            textfont=dict(size=10, color='black'),
+            hovertext=node_info,
+            hoverinfo='text',
+            showlegend=False
+        ))
+        
+        fig_network.update_layout(
+            title=f"Lagged Causal Network (Top {min(20, len(significant_lags))} Relationships)",
+            showlegend=False,
+            hovermode='closest',
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            height=600,
+            annotations=[
+                dict(
+                    text="<b>Green:</b> Positive correlation | <b>Red:</b> Negative correlation<br><b>Line width:</b> Correlation strength",
+                    showarrow=False,
+                    xref="paper", yref="paper",
+                    x=0.5, y=-0.05,
+                    xanchor='center', yanchor='top',
+                    font=dict(color='gray', size=11)
+                )
+            ]
+        )
+        
+        # Create HTML results
+        results_html = f"""
+        <div style="background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <h3>🔍 Auto-Discovery Results</h3>
+            
+            <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>✅ Discovery Summary</h4>
+                <p><strong>Significant Relationships Found:</strong> {len(significant_lags)}</p>
+                <p><strong>Variable Pairs Tested:</strong> {total_pairs}</p>
+                <p><strong>Maximum Lags:</strong> {max_lags}</p>
+                <p><strong>Correlation Threshold:</strong> {correlation_threshold:.2f}</p>
+            </div>
+            
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>🏆 Top 10 Lagged Relationships</h4>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                    <tr style="background: #e0e0e0;">
+                        <th style="padding: 8px; border: 1px solid #ddd;">Rank</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Predictor</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Target</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Lag</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Correlation</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Direction</th>
+                    </tr>
+        """
+        
+        for idx, rel in enumerate(significant_lags[:10], 1):
+            color = '#d4edda' if rel['abs_correlation'] > 0.5 else '#fff3cd'
+            results_html += f"""
+                <tr style="background: {color};">
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{idx}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">{rel['predictor']}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">{rel['target']}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{rel['optimal_lag']}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{rel['correlation']:.3f}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{rel['direction']}</td>
+                </tr>
+            """
+        
+        results_html += """
+                </table>
+            </div>
+            
+            <div style="background: #fff3e0; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>💡 Interpretation</h4>
+                <ul>
+                    <li><strong>Lag = 0:</strong> Contemporaneous (same-time) relationship</li>
+                    <li><strong>Lag > 0:</strong> Predictor leads target by that many time periods</li>
+                    <li><strong>Positive:</strong> Predictor ↑ → Target ↑</li>
+                    <li><strong>Negative:</strong> Predictor ↑ → Target ↓</li>
+                    <li><strong>|Correlation| > 0.5:</strong> Strong relationship</li>
+                    <li><strong>0.3 < |Correlation| < 0.5:</strong> Moderate relationship</li>
+                </ul>
+            </div>
+            
+            <div style="background: #f3e5f5; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>📊 Lag Distribution</h4>
+        """
+        
+        # Count relationships by lag
+        lag_counts = {}
+        for rel in significant_lags:
+            lag = rel['optimal_lag']
+            lag_counts[lag] = lag_counts.get(lag, 0) + 1
+        
+        for lag in sorted(lag_counts.keys()):
+            count = lag_counts[lag]
+            percentage = (count / len(significant_lags)) * 100
+            results_html += f"<p><strong>Lag {lag}:</strong> {count} relationships ({percentage:.1f}%)</p>"
+        
+        results_html += """
+            </div>
+        </div>
+        """
+        
+        progress(1.0, desc="✅ Auto-discovery complete!")
+        
+        return fig_network, results_html, f"✅ Found {len(significant_lags)} significant lagged relationships!"
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        progress(1.0, desc="❌ Discovery failed")
+        error_msg = f"❌ Auto-discovery failed: {str(e)}"
+        return None, error_msg, error_msg
 
 def perform_causal_discovery_comparison(progress=gr.Progress()):
     """Compare different causal discovery algorithms"""
@@ -4650,6 +5144,29 @@ def create_gradio_interface():
                         
                         lag_btn = gr.Button("⏱️ Analyze Lags", variant="primary", size="lg")
                         
+                        gr.Markdown("---")
+                        gr.Markdown("### 🔍 Auto-Discovery")
+                        
+                        auto_lag_max = gr.Slider(
+                            minimum=1,
+                            maximum=10,
+                            value=5,
+                            step=1,
+                            label="⏰ Max Lags for Auto-Discovery",
+                            info="Maximum lags to test for all variable pairs"
+                        )
+                        
+                        auto_lag_threshold = gr.Slider(
+                            minimum=0.1,
+                            maximum=0.9,
+                            value=0.3,
+                            step=0.05,
+                            label="📊 Correlation Threshold",
+                            info="Minimum correlation to report (0.3 = moderate)"
+                        )
+                        
+                        auto_lag_btn = gr.Button("🔍 Find All Significant Lags", variant="secondary", size="lg")
+                        
                         lag_status = gr.Textbox(
                             label="📊 Analysis Status",
                             value="Ready to analyze lagged relationships...",
@@ -4664,6 +5181,8 @@ def create_gradio_interface():
                         
                         **Granger Causality**: Tests if past values of predictor help forecast target
                         
+                        **Auto-Discovery**: Finds all significant lagged relationships automatically
+                        
                         **Use Cases**:
                         - Economic indicators (GDP → consumption)
                         - Marketing effects (ads → sales)
@@ -4676,6 +5195,9 @@ def create_gradio_interface():
                         
                         gr.Markdown("### 🔍 Lagged Scatter Plots")
                         lag_scatter_plot = gr.Plot(label="Relationships at Different Lags")
+                        
+                        gr.Markdown("### 🌐 Auto-Discovery Network")
+                        auto_lag_network = gr.Plot(label="Significant Lagged Relationships Network")
                         
                         gr.Markdown("### 📋 Detailed Results")
                         lag_results = gr.HTML(label="⏱️ Lag Analysis Results")
@@ -4763,6 +5285,12 @@ def create_gradio_interface():
             fn=perform_lag_analysis,
             inputs=[lag_target, lag_predictor, max_lags],
             outputs=[lag_cross_corr_plot, lag_scatter_plot, lag_results, lag_status]
+        )
+        
+        auto_lag_btn.click(
+            fn=auto_discover_lagged_relationships,
+            inputs=[auto_lag_max, auto_lag_threshold],
+            outputs=[auto_lag_network, lag_results, lag_status]
         )
         
         comparison_btn.click(
