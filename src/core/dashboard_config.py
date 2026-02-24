@@ -92,7 +92,8 @@ FORECASTING_MODELS = [
     "VAR (Vector Autoregression)",
     "Dynamic Factor Model",
     "State-Space Model",
-    "Nowcasting"
+    "Nowcasting",
+    "LSTM (Deep Learning)"
 ]
 
 # Y-axis aggregation options

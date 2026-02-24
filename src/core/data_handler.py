@@ -21,8 +21,16 @@ def load_data_from_file(file_path):
             df = pd.read_csv(file_path)
         elif file_path.endswith(('.xlsx', '.xls')):
             df = pd.read_excel(file_path)
+        elif file_path.endswith('.json'):
+            df = pd.read_json(file_path)
+        elif file_path.endswith('.parquet'):
+            df = pd.read_parquet(file_path)
         else:
-            return "❌ Unsupported file format. Please upload CSV or Excel files.", None, None, None, None
+            return "❌ Unsupported file format. Please upload CSV, Excel, JSON or Parquet files.", None, None, None, None
+        
+        # Clean data and convert dates
+        df = impute_missing_values(df)
+        df = convert_date_columns(df)
         
         dashboard_config.current_data = df
         
@@ -145,14 +153,39 @@ def load_data_from_file(file_path):
     except Exception as e:
         return f"❌ Error loading file: {str(e)}", None, None, None, None
 
+def impute_missing_values(df):
+    """Clean data by imputing missing values and handling infinite values"""
+    # Replace inf with NaN first
+    df = df.replace([np.inf, -np.inf], np.nan)
+    
+    # Missing data imputation
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+    
+    # Impute numeric with median
+    for col in numeric_cols:
+        if df[col].isnull().any():
+            median_val = df[col].median()
+            df[col] = df[col].fillna(median_val)
+            print(f"✅ Imputed missing values in '{col}' with median")
+            
+    # Impute categorical with mode
+    for col in categorical_cols:
+        if df[col].isnull().any():
+            mode_val = df[col].mode()[0] if not df[col].mode().empty else "Unknown"
+            df[col] = df[col].fillna(mode_val)
+            print(f"✅ Imputed missing values in '{col}' with mode")
+            
+    return df
+
 def convert_date_columns(dataframe):
     """Convert potential date columns to datetime"""
     for col in dataframe.columns:
         if col.lower() in ['date', 'time', 'timestamp'] or 'date' in col.lower():
             if not pd.api.types.is_datetime64_any_dtype(dataframe[col]):
                 try:
-                    # Try to convert to datetime
-                    dataframe[col] = pd.to_datetime(dataframe[col], errors='coerce')
+                    # Try to convert to datetime robustly
+                    dataframe[col] = pd.to_datetime(dataframe[col], format='mixed', errors='coerce')
                     print(f"✅ Converted {col} to datetime")
                 except Exception as e:
                     print(f"⚠️ Could not convert {col} to datetime: {e}")
