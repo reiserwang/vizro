@@ -1,0 +1,45 @@
+{
+  "server": {
+    "port": 7860,
+    "host": "0.0.0.0",
+    "share": false,
+    "debug": false,
+    "show_error": true,
+    "quiet": false,
+    "inbrowser": true,
+    "ssl_verify": false
+  },
+  "ui": {
+    "title": "🔍 Dynamic Data Analysis Dashboard",
+    "description": "Advanced Analytics Platform",
+    "theme": "default"
+  },
+  "causal_analysis": {
+    "max_variables": 12,
+    "max_samples": 1500,
+    "notears_params": {
+      "max_iter": 100,
+      "h_tol": 1e-08,
+      "w_threshold": 0.3
+    }
+  },
+  "forecasting": {
+    "default_model": "Linear Regression",
+    "default_periods": 12,
+    "default_confidence_level": 0.95
+  },
+  "visualization": {
+    "default_theme": "Light",
+    "chart_height": 600,
+    "default_chart_type": "Enhanced Scatter Plot"
+  },
+  "features": {
+    "enable_vizro": true,
+    "enable_forecasting": true,
+    "enable_causal_analysis": true,
+    "enable_intervention_analysis": true,
+    "enable_pathway_analysis": true,
+    "enable_data_insights": true,
+    "enable_export": true
+  }
+}

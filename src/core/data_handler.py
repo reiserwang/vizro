@@ -6,144 +6,115 @@ Data Loading and Processing Module
 import pandas as pd
 import numpy as np
 import gradio as gr
-from . import dashboard_config
-from .dashboard_config import SUPPORTED_FILE_FORMATS
+import io
+import requests
+import json
+from core import dashboard_config
+from core.dashboard_config import SUPPORTED_FILE_FORMATS
 
-def load_data_from_file(file_path):
-    """Load data from uploaded file"""
+def load_data_from_file(file_obj):
+    """Load data from uploaded file (path or object)"""
     
-    if file_path is None:
+    if file_obj is None:
         return "❌ No file uploaded", None, None, None, None
     
     try:
-        # Read the file based on extension
+        # Determine file path if it's a string, otherwise it's likely a file-like object or Gradio file wrapper
+        file_path = file_obj.name if hasattr(file_obj, 'name') else str(file_obj)
+
+        df = None
+
+        # CSV Handling with resilience
         if file_path.endswith('.csv'):
-            df = pd.read_csv(file_path)
+            # Try default reading
+            try:
+                df = pd.read_csv(file_obj)
+            except UnicodeDecodeError:
+                # Try common encodings
+                encodings = ['latin1', 'iso-8859-1', 'cp1252']
+                for enc in encodings:
+                    try:
+                        # Reset file pointer if possible
+                        if hasattr(file_obj, 'seek'):
+                            file_obj.seek(0)
+                        df = pd.read_csv(file_obj, encoding=enc)
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                if df is None:
+                    raise ValueError("Could not decode CSV file with standard encodings.")
+            except pd.errors.ParserError:
+                # Try python engine with sniffing
+                if hasattr(file_obj, 'seek'):
+                    file_obj.seek(0)
+                df = pd.read_csv(file_obj, sep=None, engine='python')
+
+        # Excel Handling
         elif file_path.endswith(('.xlsx', '.xls')):
-            df = pd.read_excel(file_path)
+            df = pd.read_excel(file_obj)
+
+        # JSON Handling
+        elif file_path.endswith('.json'):
+            df = pd.read_json(file_obj)
+
+        # Parquet Handling
+        elif file_path.endswith('.parquet'):
+            df = pd.read_parquet(file_obj)
+
         else:
-            return "❌ Unsupported file format. Please upload CSV or Excel files.", None, None, None, None
+            return "❌ Unsupported file format. Please upload CSV, Excel, JSON, or Parquet.", None, None, None, None
         
+        if df is None:
+             return "❌ Failed to load data.", None, None, None, None
+
+        # Post-load processing
         dashboard_config.current_data = df
         
         # Get column options
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         all_cols = df.columns.tolist()
-        
-        # Create sortable data preview
-        preview_df = df.head(20)  # Show more rows for better preview
-        
-        # Create table headers
-        table_headers = ''.join([
-            f'<th class="sortable-column" onclick="sortPreviewTable({i}, \'data-preview\')" '
-            f'style="cursor: pointer; user-select: none; position: relative;">'
-            f'{col} <span class="sort-indicator">⇅</span></th>' 
-            for i, col in enumerate(preview_df.columns)
-        ])
-        
-        # Create table rows
-        table_rows = ""
-        for _, row in preview_df.iterrows():
-            row_html = "<tr>"
-            for col in preview_df.columns:
-                cell_value = str(row[col])
-                if len(cell_value) > 50:
-                    cell_value = cell_value[:50] + "..."
-                row_html += f"<td>{cell_value}</td>"
-            row_html += "</tr>"
-            table_rows += row_html
-        
-        # JavaScript for sorting
-        sort_script = """
-        <script>
-        function sortPreviewTable(columnIndex, tableId) {
-            const table = document.getElementById(tableId);
-            if (!table) return;
-            
-            const tbody = table.querySelector('tbody');
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            const header = table.querySelectorAll('th')[columnIndex];
-            const currentSort = header.getAttribute('data-sort') || 'none';
-            
-            // Reset all sort indicators in this table
-            table.querySelectorAll('.sort-indicator').forEach(indicator => {
-                indicator.textContent = '⇅';
-                indicator.parentElement.setAttribute('data-sort', 'none');
-            });
-            
-            let sortedRows;
-            let newSort;
-            
-            if (currentSort === 'none' || currentSort === 'desc') {
-                // Sort ascending
-                sortedRows = rows.sort((a, b) => {
-                    const aVal = a.cells[columnIndex].textContent.trim();
-                    const bVal = b.cells[columnIndex].textContent.trim();
-                    
-                    // Try to parse as numbers
-                    const aNum = parseFloat(aVal.replace(/[^0-9.-]/g, ''));
-                    const bNum = parseFloat(bVal.replace(/[^0-9.-]/g, ''));
-                    
-                    if (!isNaN(aNum) && !isNaN(bNum)) {
-                        return aNum - bNum;
-                    }
-                    
-                    return aVal.localeCompare(bVal, undefined, {numeric: true, sensitivity: 'base'});
-                });
-                newSort = 'asc';
-                header.querySelector('.sort-indicator').textContent = '↑';
-            } else {
-                // Sort descending
-                sortedRows = rows.sort((a, b) => {
-                    const aVal = a.cells[columnIndex].textContent.trim();
-                    const bVal = b.cells[columnIndex].textContent.trim();
-                    
-                    // Try to parse as numbers
-                    const aNum = parseFloat(aVal.replace(/[^0-9.-]/g, ''));
-                    const bNum = parseFloat(bVal.replace(/[^0-9.-]/g, ''));
-                    
-                    if (!isNaN(aNum) && !isNaN(bNum)) {
-                        return bNum - aNum;
-                    }
-                    
-                    return bVal.localeCompare(aVal, undefined, {numeric: true, sensitivity: 'base'});
-                });
-                newSort = 'desc';
-                header.querySelector('.sort-indicator').textContent = '↓';
-            }
-            
-            header.setAttribute('data-sort', newSort);
-            
-            // Clear tbody and append sorted rows
-            tbody.innerHTML = '';
-            sortedRows.forEach(row => tbody.appendChild(row));
-        }
-        </script>
-        """
-        
-        preview = f"""
-        <div class="table-container">
-            <h4>📋 Data Preview (First 20 rows)</h4>
-            <table id="data-preview" class="table table-striped table-hover sortable-table">
-                <thead class="table-header">
-                    <tr>
-                        {table_headers}
-                    </tr>
-                </thead>
-                <tbody>
-                    {table_rows}
-                </tbody>
-            </table>
-        </div>
-        {sort_script}
-        """
         
         success_msg = f"✅ Data loaded successfully! Shape: {df.shape[0]} rows × {df.shape[1]} columns"
         
-        return success_msg, gr.update(choices=all_cols, value=None), gr.update(choices=all_cols, value=None), gr.update(choices=all_cols, value=None), preview
+        return success_msg, gr.update(choices=all_cols, value=None), gr.update(choices=all_cols, value=None), gr.update(choices=all_cols, value=None), df
         
     except Exception as e:
         return f"❌ Error loading file: {str(e)}", None, None, None, None
+
+def load_data_from_url(url):
+    """Load data from a URL"""
+    if not url:
+        return "❌ Please enter a URL", None, None, None, None
+
+    # Security check: Prevent SSRF
+    if not (url.startswith('http://') or url.startswith('https://')):
+        return "❌ Invalid URL scheme. Only http:// and https:// are supported.", None, None, None, None
+        
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        # Create a file-like object from content
+        content = io.BytesIO(response.content)
+        
+        # Try to infer filename/extension from URL or headers
+        if 'content-disposition' in response.headers:
+            # Simple extraction (could be improved)
+            fname = response.headers['content-disposition'].split('filename=')[-1].strip('"')
+            content.name = fname
+        else:
+            content.name = url.split('/')[-1]
+            if '?' in content.name:
+                content.name = content.name.split('?')[0]
+
+        # If no extension found, default to CSV if content looks like text, or try to peek
+        if '.' not in content.name:
+            # Fallback assumption
+            content.name += '.csv'
+
+        return load_data_from_file(content)
+        
+    except Exception as e:
+         return f"❌ Error loading from URL: {str(e)}", None, None, None, None
 
 def convert_date_columns(dataframe):
     """Convert potential date columns to datetime"""

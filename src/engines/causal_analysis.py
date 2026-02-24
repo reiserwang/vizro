@@ -11,8 +11,8 @@ from sklearn.preprocessing import StandardScaler
 from scipy.stats import pearsonr
 import gradio as gr
 
-from ..core import dashboard_config
-from ..core.config import CAUSAL_ANALYSIS_PARAMS
+from core import dashboard_config
+from core.config import CAUSAL_ANALYSIS_PARAMS
 from .causal_network_utils import has_cycles, resolve_cycles, create_network_plot
 
 def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_all_relationships=False, progress=gr.Progress()):

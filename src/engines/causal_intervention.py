@@ -12,7 +12,7 @@ from causalnex.network import BayesianNetwork
 from causalnex.inference import InferenceEngine
 from causalnex.discretiser import Discretiser
 
-from ..core import dashboard_config
+from core import dashboard_config
 from .causal_network_utils import has_cycles, resolve_cycles
 from .causal_discretization import create_ultra_robust_split_points
 

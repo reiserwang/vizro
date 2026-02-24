@@ -23,6 +23,7 @@ from core.dashboard_config import (
 
 from core.data_handler import (
     load_data_from_file,
+    load_data_from_url,
     update_forecast_dropdowns,
     update_causal_dropdowns
 )
@@ -126,27 +127,44 @@ def create_gradio_interface():
             with gr.Tab("📁 Data Upload", id="data_upload"):
                 with gr.Row():
                     with gr.Column(scale=1):
-                        gr.HTML("""
-                        <div style="background: #e3f2fd; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
-                            <h3 style="margin-top: 0;">📊 Upload Your Dataset</h3>
-                            <p><strong>Supported formats:</strong> CSV, Excel (.xlsx, .xls)</p>
-                            <p><strong>Requirements:</strong> Numeric columns for analysis</p>
-                            <p><strong>Recommended:</strong> 100+ rows, 5+ variables</p>
-                        </div>
-                        """)
-                        
-                        file_input = gr.File(
-                            label="📁 Choose File",
-                            file_types=[".csv", ".xlsx", ".xls"],
-                            type="filepath"
-                        )
+                        with gr.Tabs():
+                            with gr.Tab("File Upload", id="tab_file"):
+                                gr.HTML("""
+                                <div style="background: #e3f2fd; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                                    <h3 style="margin-top: 0;">📊 Upload Your Dataset</h3>
+                                    <p><strong>Supported formats:</strong> CSV, Excel, JSON, Parquet</p>
+                                    <p><strong>Requirements:</strong> Numeric columns for analysis</p>
+                                    <p><strong>Recommended:</strong> 100+ rows, 5+ variables</p>
+                                </div>
+                                """)
+
+                                file_input = gr.File(
+                                    label="📁 Choose File",
+                                    file_types=[".csv", ".xlsx", ".xls", ".json", ".parquet"],
+                                    type="filepath"
+                                )
+
+                            with gr.Tab("URL Import", id="tab_url"):
+                                gr.HTML("""
+                                <div style="background: #e3f2fd; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                                    <h3 style="margin-top: 0;">🌐 Load from URL</h3>
+                                    <p>Enter a direct link to a CSV, JSON, or Parquet file.</p>
+                                </div>
+                                """)
+                                url_input = gr.Textbox(
+                                    label="🌐 Dataset URL",
+                                    placeholder="https://example.com/data.csv",
+                                    lines=1
+                                )
+                                load_url_btn = gr.Button("⬇️ Load from URL", variant="primary")
                         
                         upload_status = gr.Markdown("📋 No file uploaded yet")
                         
                     with gr.Column(scale=2):
-                        data_preview = gr.HTML(
-                            value="<div style='text-align: center; padding: 50px; color: #666;'>📊 Data preview will appear here after upload</div>",
-                            label="Data Preview"
+                        data_preview = gr.DataFrame(
+                            label="Data Preview",
+                            interactive=False,
+                            wrap=True
                         )
             
             # Visualization Tab
@@ -458,6 +476,28 @@ def create_gradio_interface():
             fn=load_data_from_file,
             inputs=[file_input],
             outputs=[upload_status, x_axis, y_axis, color_var, data_preview]
+        ).then(
+            fn=lambda file_path: update_forecast_dropdowns() if file_path else (gr.update(), gr.update()),
+            inputs=[file_input],
+            outputs=[forecast_target, forecast_additional]
+        ).then(
+            fn=lambda file_path: update_causal_dropdowns() if file_path else (gr.update(), gr.update(), gr.update(), gr.update()),
+            inputs=[file_input],
+            outputs=[intervention_target, intervention_var, intervention_target, intervention_var]
+        )
+
+        load_url_btn.click(
+            fn=load_data_from_url,
+            inputs=[url_input],
+            outputs=[upload_status, x_axis, y_axis, color_var, data_preview]
+        ).then(
+            fn=lambda url: update_forecast_dropdowns() if url else (gr.update(), gr.update()),
+            inputs=[url_input],
+            outputs=[forecast_target, forecast_additional]
+        ).then(
+            fn=lambda url: update_causal_dropdowns() if url else (gr.update(), gr.update(), gr.update(), gr.update()),
+            inputs=[url_input],
+            outputs=[intervention_target, intervention_var, intervention_target, intervention_var]
         )
         
         def update_correlation_window_visibility(chart_type_selection):
@@ -491,20 +531,6 @@ def create_gradio_interface():
         export_btn.click(
             fn=export_results,
             outputs=[export_output]
-        )
-        
-        # Update forecasting dropdowns when data is loaded
-        file_input.change(
-            fn=lambda file_path: update_forecast_dropdowns() if file_path else (gr.update(), gr.update()),
-            inputs=[file_input],
-            outputs=[forecast_target, forecast_additional]
-        )
-        
-        # Update causal analysis dropdowns when data is loaded
-        file_input.change(
-            fn=lambda file_path: update_causal_dropdowns() if file_path else (gr.update(), gr.update(), gr.update(), gr.update()),
-            inputs=[file_input],
-            outputs=[intervention_target, intervention_var, intervention_target, intervention_var]
         )
         
         # Forecasting event handler

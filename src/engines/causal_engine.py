@@ -6,7 +6,7 @@ delegating tasks to specialized sub-modules.
 """
 
 import time
-from ..core import dashboard_config
+from core import dashboard_config
 from .causal_analysis import perform_causal_analysis
 from .causal_intervention import perform_causal_intervention_analysis
 

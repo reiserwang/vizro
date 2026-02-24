@@ -115,7 +115,9 @@ CAUSAL_ANALYSIS_PARAMS = {
 # File format support
 SUPPORTED_FILE_FORMATS = {
     'csv': ['.csv'],
-    'excel': ['.xlsx', '.xls']
+    'excel': ['.xlsx', '.xls'],
+    'json': ['.json'],
+    'parquet': ['.parquet']
 }
 
 # Progress tracking steps
