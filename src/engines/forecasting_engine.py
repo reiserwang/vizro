@@ -395,6 +395,95 @@ def nowcasting_forecast(data, target_col, periods, confidence_level=0.95):
     except Exception as e:
         raise ValueError(f"Nowcasting failed: {str(e)}")
 
+def lstm_forecast(data, target_col, periods, confidence_level=0.95):
+    """LSTM Deep Learning forecasting (Simplified)"""
+    try:
+        try:
+            import torch
+            import torch.nn as nn
+        except ImportError:
+            raise ValueError("LSTM requires PyTorch. Install with: pip install torch")
+            
+        y = data[target_col].dropna().values
+        
+        # Simple normalization
+        y_min, y_max = np.min(y), np.max(y)
+        if y_max > y_min:
+            y_scaled = (y - y_min) / (y_max - y_min)
+        else:
+            y_scaled = y
+            
+        seq_length = min(5, len(y) // 2)
+        if seq_length < 1:
+            raise ValueError("Not enough data points for LSTM (need at least 2)")
+            
+        # Prepare dataset
+        X, Y = [], []
+        for i in range(len(y_scaled) - seq_length):
+            X.append(y_scaled[i:i+seq_length])
+            Y.append(y_scaled[i+seq_length])
+            
+        X_tensor = torch.tensor(X, dtype=torch.float32).unsqueeze(-1)
+        Y_tensor = torch.tensor(Y, dtype=torch.float32).unsqueeze(-1)
+        
+        class SimpleLSTM(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lstm = nn.LSTM(1, 16, batch_first=True)
+                self.linear = nn.Linear(16, 1)
+            def forward(self, x):
+                out, _ = self.lstm(x)
+                return self.linear(out[:, -1, :])
+                
+        model = SimpleLSTM()
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+        criterion = nn.MSELoss()
+        
+        for epoch in range(50):
+            optimizer.zero_grad()
+            out = model(X_tensor)
+            loss = criterion(out, Y_tensor)
+            loss.backward()
+            optimizer.step()
+            
+        model.eval()
+        forecast_scaled = []
+        current_seq = y_scaled[-seq_length:].tolist()
+        
+        with torch.no_grad():
+            for _ in range(periods):
+                x_in = torch.tensor([current_seq], dtype=torch.float32).unsqueeze(-1)
+                pred = model(x_in).item()
+                forecast_scaled.append(pred)
+                current_seq.append(pred)
+                current_seq.pop(0)
+                
+        if y_max > y_min:
+            forecast = np.array(forecast_scaled) * (y_max - y_min) + y_min
+            fitted_scaled = model(X_tensor).detach().numpy().flatten()
+            fitted = fitted_scaled * (y_max - y_min) + y_min
+        else:
+            forecast = np.array(forecast_scaled)
+            fitted = model(X_tensor).detach().numpy().flatten()
+            
+        padded_fitted = np.pad(fitted, (seq_length, 0), mode='edge')
+        margin = 0.1 * np.mean(y) if np.mean(y) != 0 else 0.1
+        
+        return {
+            'forecast': forecast,
+            'lower_bound': forecast - margin,
+            'upper_bound': forecast + margin,
+            'fitted_values': padded_fitted,
+            'model_info': {
+                'epochs': 50,
+                'hidden_size': 16,
+                'sequence_length': seq_length,
+                'method': 'LSTM (PyTorch)'
+            }
+        }
+    except Exception as e:
+        raise ValueError(f"LSTM forecast failed: {str(e)}")
+
 def perform_forecasting(target_var, additional_vars, model_type, periods, seasonal_period, confidence_level, progress=gr.Progress()):
     """Main forecasting function"""
     
@@ -443,6 +532,8 @@ def perform_forecasting(target_var, additional_vars, model_type, periods, season
             result = state_space_forecast(ts_data, target_var, periods, confidence_level)
         elif model_type == "Nowcasting":
             result = nowcasting_forecast(ts_data, target_var, periods, confidence_level)
+        elif model_type == "LSTM (Deep Learning)":
+            result = lstm_forecast(ts_data, target_var, periods, confidence_level)
         else:
             return None, f"⚠️ Unknown model type: {model_type}", "Invalid model selection"
         

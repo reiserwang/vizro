@@ -64,6 +64,10 @@ def load_data_from_file(file_obj):
         else:
             return "❌ Unsupported file format. Please upload CSV, Excel, JSON, or Parquet.", None, None, None, None
         
+        # Clean data and convert dates
+        df = impute_missing_values(df)
+        df = convert_date_columns(df)
+        
         if df is None:
              return "❌ Failed to load data.", None, None, None, None
 
@@ -137,14 +141,40 @@ def load_data_from_url(url):
     except Exception as e:
          return f"❌ Error loading from URL: {str(e)}", None, None, None, None
 
+def impute_missing_values(df):
+    """Clean data by imputing missing values and handling infinite values"""
+    # Replace inf with NaN first
+    df = df.replace([np.inf, -np.inf], np.nan)
+    
+    # Missing data imputation
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+    
+    # Impute numeric with median
+    for col in numeric_cols:
+        if df[col].isnull().any():
+            median_val = df[col].median()
+            df[col] = df[col].fillna(median_val)
+            print(f"✅ Imputed missing values in '{col}' with median")
+            
+    # Impute categorical with mode
+    for col in categorical_cols:
+        if df[col].isnull().any():
+            mode_val = df[col].mode()[0] if not df[col].mode().empty else "Unknown"
+            df[col] = df[col].fillna(mode_val)
+            print(f"✅ Imputed missing values in '{col}' with mode")
+            
+    return df
+>>>>>>> origin/main
+
 def convert_date_columns(dataframe):
     """Convert potential date columns to datetime"""
     for col in dataframe.columns:
         if col.lower() in ['date', 'time', 'timestamp'] or 'date' in col.lower():
             if not pd.api.types.is_datetime64_any_dtype(dataframe[col]):
                 try:
-                    # Try to convert to datetime
-                    dataframe[col] = pd.to_datetime(dataframe[col], errors='coerce')
+                    # Try to convert to datetime robustly
+                    dataframe[col] = pd.to_datetime(dataframe[col], format='mixed', errors='coerce')
                     print(f"✅ Converted {col} to datetime")
                 except Exception as e:
                     print(f"⚠️ Could not convert {col} to datetime: {e}")
