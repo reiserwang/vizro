@@ -4,9 +4,9 @@ Analysis engines module containing specialized analytical components.
 
 from .causal_engine import (
     perform_causal_analysis_with_status, 
-    perform_causal_intervention_analysis, 
     export_results
 )
+from .causal_intervention import perform_causal_intervention_analysis
 from .forecasting_engine import (
     perform_forecasting,
     create_forecast_plot,
