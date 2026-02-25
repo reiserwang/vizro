@@ -89,8 +89,29 @@ def load_data_from_url(url):
     if not (url.startswith('http://') or url.startswith('https://')):
         return "❌ Invalid URL scheme. Only http:// and https:// are supported.", None, None, None, None
         
+    # Additional SSRF protection - basic check for localhost/internal IPs
+    from urllib.parse import urlparse
     try:
-        response = requests.get(url)
+        parsed = urlparse(url)
+        hostname = parsed.hostname.lower() if parsed.hostname else ""
+        
+        # Block common internal hostnames and IPs
+        blocklist = [
+            'localhost', '127.0.0.1', '0.0.0.0', '169.254.169.254',
+            'host.docker.internal', 'metadata.google.internal',
+            '10.', '172.16.', '172.17.', '172.18.', '172.19.', '172.2', '172.3',
+            '192.168.', '::1', '[::1]'
+        ]
+        
+        if any(hostname == blocked or hostname.startswith(blocked) for blocked in blocklist):
+            return "❌ Access to internal network resources is blocked.", None, None, None, None
+            
+    except Exception as e:
+        return f"❌ Invalid URL format: {str(e)}", None, None, None, None
+        
+    try:
+        # Added timeout to prevent hanging requests
+        response = requests.get(url, timeout=10)
         response.raise_for_status()
         
         # Create a file-like object from content
