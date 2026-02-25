@@ -6,14 +6,11 @@ delegating tasks to specialized sub-modules.
 """
 
 import time
-from ..core import dashboard_config
-from .causal_analysis import perform_causal_analysis
-from .causal_intervention import perform_causal_intervention_analysis
-
+from core import dashboard_config
 def perform_causal_analysis_with_status(hide_nonsignificant, min_correlation, theme, show_all_relationships):
     """Wrapper function to handle causal analysis with status updates"""
     try:
-        # Yield initial status
+        # Yield initial status (status, plot, table, summary)
         yield "🔍 Starting causal analysis...", None, None, "Initializing analysis..."
         time.sleep(0.1)
         
@@ -22,8 +19,8 @@ def perform_causal_analysis_with_status(hide_nonsignificant, min_correlation, th
             hide_nonsignificant, min_correlation, theme, show_all_relationships
         )
         
-        # Yield final result
-        yield summary, network_fig, table_html, "✅ Analysis complete!"
+        # Yield final result (status, plot, table, summary)
+        yield "✅ Analysis complete!", network_fig, table_html, summary
             
     except Exception as e:
         yield f"❌ Analysis failed: {str(e)}", None, None, "Analysis could not be completed."
