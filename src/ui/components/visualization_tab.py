@@ -5,7 +5,7 @@ def create_visualization_tab(VIZRO_AVAILABLE, STANDARD_CHART_TYPES, VIZRO_ENHANC
         with gr.Row():
             with gr.Column(scale=1):
                 gr.HTML("""
-                <div style="background: #f3e5f5; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                <div style="background: var(--background-fill-secondary); padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid var(--neutral-500);">
                     <h4 style="margin-top: 0;">🎨 Visualization Controls</h4>
                     <p>Create professional charts with advanced features</p>
                 </div>

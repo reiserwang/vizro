@@ -51,47 +51,51 @@ from ui.components.analysis_tab import create_analysis_tabs
 def create_gradio_interface():
     """Create the main Gradio interface with modular components"""
     
-    # Custom CSS for enhanced styling
+    # Custom CSS for enhanced styling using Gradio's native CSS variables
+    # This automatically supports Day/Night mode (light/dark themes)
     custom_css = """
     .gradio-container {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
     
     .table-container {
         max-height: 600px;
         overflow-y: auto;
-        border: 1px solid #ddd;
+        border: 1px solid var(--border-color-primary);
         border-radius: 8px;
         margin: 10px 0;
+        background-color: var(--background-fill-primary);
     }
     
     .sortable-table {
         width: 100%;
         border-collapse: collapse;
+        color: var(--body-text-color);
     }
     
     .sortable-table th {
-        background-color: #f8f9fa;
+        background-color: var(--background-fill-secondary);
         padding: 12px;
         text-align: left;
-        border-bottom: 2px solid #dee2e6;
+        border-bottom: 2px solid var(--border-color-primary);
         position: sticky;
         top: 0;
         z-index: 10;
+        font-weight: 600;
     }
     
     .sortable-table td {
         padding: 8px 12px;
-        border-bottom: 1px solid #dee2e6;
+        border-bottom: 1px solid var(--border-color-primary);
     }
     
     .sortable-table tr:hover {
-        background-color: #f5f5f5;
+        background-color: var(--background-fill-secondary);
     }
     
     .sort-indicator {
         float: right;
-        color: #6c757d;
+        color: var(--body-text-color-subdued);
         font-weight: normal;
     }
     
@@ -104,15 +108,16 @@ def create_gradio_interface():
     }
     
     .filter-controls {
-        background: #f8f9fa;
+        background: var(--background-fill-secondary);
         padding: 15px;
         border-radius: 8px;
         margin-bottom: 15px;
-        border: 1px solid #dee2e6;
+        border: 1px solid var(--border-color-primary);
     }
     """
     
-    with gr.Blocks(css=custom_css, title="🔍 Dynamic Data Analysis Dashboard") as demo:
+    with gr.Blocks(title="🔍 Dynamic Data Analysis Dashboard") as demo:
+        gr.HTML(f"<style>{custom_css}</style>", visible=False)
         
         # Header
         gr.HTML("""
@@ -133,14 +138,22 @@ def create_gradio_interface():
         # Event handlers
         config_components['file_input'].change(
             fn=load_data_from_file,
+            inputs=[config_components['file_input']],
+            outputs=[
+                config_components['upload_status'], 
+                viz_components['x_axis'], 
+                viz_components['y_axis'], 
+                viz_components['color_var'], 
+                config_components['data_preview']
+            ]
         ).then(
             fn=lambda file_path: update_forecast_dropdowns() if file_path else (gr.update(), gr.update()),
-            inputs=[file_input],
-            outputs=[forecast_target, forecast_additional]
+            inputs=[config_components['file_input']],
+            outputs=[analysis_components['forecast_target'], analysis_components['forecast_additional']]
         ).then(
             fn=lambda file_path: update_causal_dropdowns() if file_path else (gr.update(), gr.update(), gr.update(), gr.update()),
-            inputs=[file_input],
-            outputs=[intervention_target, intervention_var, intervention_target, intervention_var]
+            inputs=[config_components['file_input']],
+            outputs=[analysis_components['intervention_target'], analysis_components['intervention_var'], analysis_components['intervention_target'], analysis_components['intervention_var']]
         )
 
         config_components['load_url_btn'].click(
@@ -208,22 +221,7 @@ def create_gradio_interface():
             outputs=[analysis_components['export_output']]
         )
         
-        # Update forecasting dropdowns when data is loaded
-        config_components['file_input'].change(
-            fn=lambda file_path: update_forecast_dropdowns() if file_path else (gr.update(), gr.update()),
-            inputs=[config_components['file_input']],
-            outputs=[analysis_components['forecast_target'], analysis_components['forecast_additional']]
-        )
-        
-        # Update causal analysis dropdowns when data is loaded
-        config_components['file_input'].change(
-            fn=lambda file_path: update_causal_dropdowns() if file_path else (gr.update(), gr.update(), gr.update(), gr.update()),
-            inputs=[config_components['file_input']],
-            outputs=[
-                analysis_components['intervention_target'], analysis_components['intervention_var'], 
-                analysis_components['intervention_target'], analysis_components['intervention_var']
-            ]
-        )
+
         # Forecasting event handler
         analysis_components['forecast_btn'].click(
             fn=perform_forecasting,

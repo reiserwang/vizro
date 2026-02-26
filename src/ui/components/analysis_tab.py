@@ -8,7 +8,7 @@ def create_analysis_tabs(FORECASTING_MODELS):
         with gr.Row():
             with gr.Column(scale=1):
                 gr.HTML("""
-                <div style="background: #fff3e0; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                <div style="background: var(--background-fill-secondary); padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid var(--primary-500);">
                     <h4 style="margin-top: 0;">🔮 Time Series Forecasting</h4>
                     <p>Predict future values using advanced models</p>
                 </div>
@@ -34,14 +34,14 @@ def create_analysis_tabs(FORECASTING_MODELS):
                     with gr.Column():
                         components['forecast_summary'] = gr.Markdown(value="📋 Forecast summary will appear here", label="📊 Forecast Summary")
                     with gr.Column():
-                        components['forecast_metrics'] = gr.HTML(value="<div style='text-align: center; padding: 20px; color: #666;'>📊 Detailed metrics will appear here</div>", label="📈 Detailed Metrics")
+                        components['forecast_metrics'] = gr.HTML(value="<div style='text-align: center; padding: 20px; color: var(--body-text-color-subdued);'>📊 Detailed metrics will appear here</div>", label="📈 Detailed Metrics")
                         
     # Causal Analysis Tab
     with gr.Tab("🔍 Causal Analysis", id="causal_analysis"):
         with gr.Row():
             with gr.Column(scale=1):
                 gr.HTML("""
-                <div style="background: #e8f5e8; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                <div style="background: var(--background-fill-secondary); padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid var(--secondary-500);">
                     <h4 style="margin-top: 0;">🧠 Causal Discovery</h4>
                     <p>Discover true causal relationships in your data</p>
                 </div>
@@ -62,7 +62,7 @@ def create_analysis_tabs(FORECASTING_MODELS):
             with gr.Column(scale=2):
                 components['analysis_status'] = gr.Markdown(value="📋 Click 'Run Causal Analysis' to start", label="📊 Analysis Status")
                 components['causal_network'] = gr.Plot(label="🕸️ Causal Network", show_label=True)
-                components['causal_table'] = gr.HTML(value="<div style='text-align: center; padding: 20px; color: #666;'>📊 Results table will appear here</div>", label="📋 Detailed Results")
+                components['causal_table'] = gr.HTML(value="<div style='text-align: center; padding: 20px; color: var(--body-text-color-subdued);'>📊 Results table will appear here</div>", label="📋 Detailed Results")
                 components['causal_summary'] = gr.Markdown(value="📋 Analysis summary will appear here", label="📊 Summary")
                 components['export_output'] = gr.Markdown(value="", label="📥 Export Status")
                 
@@ -71,7 +71,7 @@ def create_analysis_tabs(FORECASTING_MODELS):
         with gr.Row():
             with gr.Column():
                 gr.HTML("""
-                <div style="background: #fce4ec; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                <div style="background: var(--background-fill-secondary); padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid var(--error-500);">
                     <h4 style="margin-top: 0;">🎯 Intervention Analysis</h4>
                     <p>Analyze "what-if" scenarios using do-calculus</p>
                 </div>
@@ -86,7 +86,7 @@ def create_analysis_tabs(FORECASTING_MODELS):
                 components['intervention_btn'] = gr.Button("🎯 Run Intervention Analysis", variant="primary")
             
             with gr.Column():
-                components['intervention_results'] = gr.HTML(value="<div style='text-align: center; padding: 20px; color: #666;'>🎯 Intervention results will appear here</div>", label="🎯 Intervention Results")
+                components['intervention_results'] = gr.HTML(value="<div style='text-align: center; padding: 20px; color: var(--body-text-color-subdued);'>🎯 Intervention results will appear here</div>", label="🎯 Intervention Results")
                 components['intervention_status'] = gr.Markdown(value="📋 Configure intervention and click 'Run Analysis'", label="📊 Status")
 
     return components
