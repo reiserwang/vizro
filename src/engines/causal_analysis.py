@@ -6,6 +6,7 @@ Handles the main causal discovery workflow.
 
 import pandas as pd
 import numpy as np
+import html
 from causalnex.structure.notears import from_pandas
 from sklearn.preprocessing import StandardScaler
 from scipy.stats import pearsonr
@@ -184,7 +185,7 @@ def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_al
         # Add top 3 relationships
         for i, row in results_df.head(3).iterrows():
             direction = "→" if row['correlation'] > 0 else "⟷"
-            summary += f"- **{row['source']} {direction} {row['target']}**: r = {row['correlation']:.3f} (p = {row['p_value']:.3f})\n"
+            summary += f"- **{html.escape(str(row['source']))} {direction} {html.escape(str(row['target']))}**: r = {row['correlation']:.3f} (p = {row['p_value']:.3f})\n"
 
         # Store results globally
         dashboard_config.causal_results = {
@@ -337,16 +338,19 @@ def create_advanced_causal_table(results_df, edge_stats):
         else:
             row_class += "weak-correlation "
 
+        safe_source = html.escape(str(row['source']))
+        safe_target = html.escape(str(row['target']))
+
         causal_rows += f'''
         <tr class="{row_class}"
-            data-source="{row['source'].lower()}"
-            data-target="{row['target'].lower()}"
+            data-source="{safe_source.lower()}"
+            data-target="{safe_target.lower()}"
             data-correlation="{correlation_val}"
             data-pvalue="{pvalue_val}"
             data-r2="{r2_val}"
             data-significant="{row['significance'].lower()}">
-            <td>{row['source']}</td>
-            <td>{row['target']}</td>
+            <td>{safe_source}</td>
+            <td>{safe_target}</td>
             <td class="numeric-cell">{correlation_val:.4f}</td>
             <td class="numeric-cell">{pvalue_val:.4f}</td>
             <td class="numeric-cell">{r2_val:.4f}</td>
