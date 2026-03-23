@@ -772,7 +772,7 @@ def create_forecast_summary(result, model_type, target_var, periods, confidence_
         metrics_html = f"""
         <div class="table-container">
             <h4>📊 Detailed Forecast Values</h4>
-            {metrics_df.to_html(classes='table table-striped table-hover', index=False, escape=False)}
+            {metrics_df.to_html(classes='table table-striped table-hover', index=False, escape=True)}
         </div>
         """
         

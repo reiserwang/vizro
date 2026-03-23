@@ -7,6 +7,7 @@ Handles 'what-if' scenario analysis using do-calculus.
 import pandas as pd
 import numpy as np
 import gradio as gr
+import html
 from causalnex.structure.notears import from_pandas
 from causalnex.network import BayesianNetwork
 from causalnex.inference import InferenceEngine
@@ -43,7 +44,7 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
             return f"""
             ❌ Intervention analysis failed: Insufficient variation in target variable
 
-            **Problem:** The target variable '{target_var}' has no variation (std = {target_variation:.2e})
+            **Problem:** The target variable '{html.escape(str(target_var))}' has no variation (std = {target_variation:.2e})
 
             **Solutions:**
             • Choose a different target variable with more diverse values
@@ -55,7 +56,7 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
             return f"""
             ❌ Intervention analysis failed: Insufficient variation in intervention variable
 
-            **Problem:** The intervention variable '{intervention_var}' has no variation (std = {intervention_variation:.2e})
+            **Problem:** The intervention variable '{html.escape(str(intervention_var))}' has no variation (std = {intervention_variation:.2e})
 
             **Solutions:**
             • Choose a different intervention variable with more diverse values
@@ -81,7 +82,7 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
 
                 **Problem:** The causal discovery algorithm found bidirectional relationships that create cycles.
 
-                **Detected Issue:** {str(e)}
+                **Detected Issue:** {html.escape(str(e))}
 
                 **Solutions:**
                 • Try with fewer variables (select 5-10 most important ones)
@@ -146,7 +147,7 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
 
                 **Problem:** After removing columns with discretization issues, only {len(df_numeric.columns)} variables remain.
 
-                **Failed columns:** {', '.join(failed_columns)}
+                **Failed columns:** {', '.join([html.escape(str(c)) for c in failed_columns])}
 
                 **Solutions:**
                 • Use a dataset with more diverse numeric variables
@@ -160,7 +161,7 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
                 return f"""
                 ❌ Intervention analysis failed: Target variable removed
 
-                **Problem:** Target variable '{target_var}' was removed due to discretization issues.
+                **Problem:** Target variable '{html.escape(str(target_var))}' was removed due to discretization issues.
 
                 **Solutions:**
                 • Choose a different target variable with more variation
@@ -172,7 +173,7 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
                 return f"""
                 ❌ Intervention analysis failed: Intervention variable removed
 
-                **Problem:** Intervention variable '{intervention_var}' was removed due to discretization issues.
+                **Problem:** Intervention variable '{html.escape(str(intervention_var))}' was removed due to discretization issues.
 
                 **Solutions:**
                 • Choose a different intervention variable with more variation
@@ -212,98 +213,42 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
         # Update split_points with cleaned version
         split_points = cleaned_split_points
 
-        # Skip CausalNex discretizer entirely - use manual discretization only
-        print(f"🏗️ Using manual discretization (bypassing CausalNex discretizer issues)...")
-
-        # Manual discretization using pandas cut - this always works
+        # Discretize data
+        print(f"🏗️ Discretizing data...")
         df_discretised = df_numeric.copy()
-        discretization_info = {}
 
-        for col in df_numeric.columns:
-            try:
-                # Calculate quantile thresholds
+        try:
+            for col in df_numeric.columns:
+                # Simple quantile-based discretization
                 q33 = df_numeric[col].quantile(0.33)
                 q67 = df_numeric[col].quantile(0.67)
 
-                # Store thresholds for intervention value discretization
-                discretization_info[col] = {'q33': q33, 'q67': q67}
-
-                # Apply discretization
                 df_discretised[col] = pd.cut(
                     df_numeric[col],
                     bins=[-np.inf, q33, q67, np.inf],
                     labels=['low', 'medium', 'high']
                 )
-
                 print(f"✅ Discretized {col}: low ≤ {q33:.3f}, medium ≤ {q67:.3f}, high > {q67:.3f}")
 
-            except Exception as e:
-                return f"""
-                ❌ Intervention analysis failed: Manual discretization error
-
-                **Problem:** Could not discretize variable '{col}': {str(e)}
-
-                **Solutions:**
-                • Check that '{col}' contains valid numeric values
-                • Ensure the variable has sufficient variation
-                • Remove any infinite or extremely large values
-                """, f"Manual discretization error for {col}: {str(e)}"
-
-        print(f"✅ Manual discretization completed successfully for {len(df_numeric.columns)} variables")
-
-        # Apply discretization with error handling
-        try:
-            print(f"🔄 Attempting to discretize data with shape: {df_numeric.shape}")
-            print(f"📊 Data types: {df_numeric.dtypes.to_dict()}")
-            print(f"📊 Data sample:\n{df_numeric.head()}")
-
-            # Try to fit and transform in separate steps for better error handling
-            discretiser = discretiser.fit(df_numeric)
-            df_discretised = discretiser.transform(df_numeric)
-            print(f"✅ Successfully discretized data: {df_discretised.shape}")
-
         except Exception as e:
-            print(f"❌ Discretization failed with error: {str(e)}")
+            return f"""
+            ❌ Intervention analysis failed: Data transformation error
 
-            # Try alternative approach: manual discretization
-            try:
-                print("🔄 Trying manual discretization as fallback...")
-                df_discretised = df_numeric.copy()
+            **Problem:** Manual discretization failed
 
-                for col in df_numeric.columns:
-                    # Simple quantile-based discretization
-                    q33 = df_numeric[col].quantile(0.33)
-                    q67 = df_numeric[col].quantile(0.67)
+            **Error:** {html.escape(str(e))}
 
-                    df_discretised[col] = pd.cut(
-                        df_numeric[col],
-                        bins=[-np.inf, q33, q67, np.inf],
-                        labels=['low', 'medium', 'high']
-                    )
+            **Solutions:**
+            • Check that your data contains valid numeric values
+            • Remove any infinite or extremely large values
+            • Ensure variables have reasonable ranges
+            • Try with a smaller subset of variables
+            • Consider using different variable combinations
 
-                print(f"✅ Manual discretization successful: {df_discretised.shape}")
-                print(f"📊 Discretized sample:\n{df_discretised.head()}")
-
-            except Exception as e2:
-                return f"""
-                ❌ Intervention analysis failed: Data transformation error
-
-                **Problem:** Both automatic and manual discretization failed
-
-                **Primary error:** {str(e)}
-                **Fallback error:** {str(e2)}
-
-                **Solutions:**
-                • Check that your data contains valid numeric values
-                • Remove any infinite or extremely large values
-                • Ensure variables have reasonable ranges
-                • Try with a smaller subset of variables
-                • Consider using different variable combinations
-
-                **Data info:**
-                • Target variable range: {df_numeric[target_var].min():.3f} to {df_numeric[target_var].max():.3f}
-                • Intervention variable range: {df_numeric[intervention_var].min():.3f} to {df_numeric[intervention_var].max():.3f}
-                """, f"Data transformation error: {str(e)}"
+            **Data info:**
+            • Target variable range: {df_numeric[target_var].min():.3f} to {df_numeric[target_var].max():.3f}
+            • Intervention variable range: {df_numeric[intervention_var].min():.3f} to {df_numeric[intervention_var].max():.3f}
+            """, f"Data transformation error: {str(e)}"
 
         # Create Bayesian Network
         bn = BayesianNetwork(sm)
@@ -324,9 +269,9 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
             return f"""
             ❌ Intervention analysis failed: Intervention value out of range
 
-            **Problem:** Intervention value {intervention_value} is outside reasonable range
+            **Problem:** Intervention value {html.escape(str(intervention_value))} is outside reasonable range
 
-            **Data range for {intervention_var}:**
+            **Data range for {html.escape(str(intervention_var))}:**
             • Minimum: {intervention_min:.3f}
             • Maximum: {intervention_max:.3f}
             • Suggested range: {intervention_min:.3f} to {intervention_max:.3f}
@@ -356,7 +301,7 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
             return f"""
             ❌ Intervention analysis failed: Could not discretize intervention value
 
-            **Problem:** Error discretizing intervention value {intervention_value}: {str(e)}
+            **Problem:** Error discretizing intervention value {html.escape(str(intervention_value))}: {html.escape(str(e))}
 
             **Solutions:**
             • Try an intervention value closer to the data mean: {df_numeric[intervention_var].mean():.3f}
@@ -376,15 +321,20 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
         baseline_query = ie.query({target_var: list(df_discretised[target_var].unique())})
 
         # Create results summary
+        safe_target_var = html.escape(str(target_var))
+        safe_intervention_var = html.escape(str(intervention_var))
+        safe_intervention_value = html.escape(str(intervention_value))
+        safe_intervention_state = html.escape(str(intervention_state))
+
         results_html = f"""
         <div style="background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
             <h3>🎯 Causal Intervention Analysis</h3>
 
             <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0;">
                 <h4>📋 Analysis Setup</h4>
-                <p><strong>Target Variable:</strong> {target_var}</p>
-                <p><strong>Intervention Variable:</strong> {intervention_var}</p>
-                <p><strong>Intervention Value:</strong> {intervention_value} → {intervention_state}</p>
+                <p><strong>Target Variable:</strong> {safe_target_var}</p>
+                <p><strong>Intervention Variable:</strong> {safe_intervention_var}</p>
+                <p><strong>Intervention Value:</strong> {safe_intervention_value} → {safe_intervention_state}</p>
             </div>
 
             <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 15px 0;">
@@ -395,7 +345,8 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
         """
 
         for state, prob in baseline_query.items():
-            results_html += f"P({target_var} = {state}) = {prob:.4f}<br>"
+            safe_state = html.escape(str(state))
+            results_html += f"P({safe_target_var} = {safe_state}) = {prob:.4f}<br>"
 
         results_html += """
                 </div>
@@ -405,7 +356,8 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
         """
 
         for state, prob in intervention_query.items():
-            results_html += f"P({target_var} = {state} | do({intervention_var} = {intervention_state})) = {prob:.4f}<br>"
+            safe_state = html.escape(str(state))
+            results_html += f"P({safe_target_var} = {safe_state} | do({safe_intervention_var} = {safe_intervention_state})) = {prob:.4f}<br>"
 
         results_html += """
                 </div>
@@ -417,6 +369,7 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
 
         # Calculate causal effects
         for state in baseline_query.keys():
+            safe_state = html.escape(str(state))
             baseline_prob = baseline_query[state]
             intervention_prob = intervention_query[state]
             effect = intervention_prob - baseline_prob
@@ -425,23 +378,23 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
             effect_color = "#4caf50" if effect > 0 else "#f44336" if effect < 0 else "#757575"
             results_html += f"""
                 <p style="color: {effect_color};">
-                    <strong>{target_var} = {state}:</strong>
+                    <strong>{safe_target_var} = {safe_state}:</strong>
                     {effect:+.4f} ({effect_pct:+.1f}% change)
                 </p>
             """
 
-        results_html += """
+        results_html += f"""
             </div>
 
             <div style="background: #fff3e0; padding: 15px; border-radius: 8px; margin: 15px 0;">
                 <h4>💡 Interpretation</h4>
-                <p>This analysis shows the <strong>causal effect</strong> of intervening on <strong>{intervention_var}</strong>
-                and setting it to <strong>{intervention_value}</strong> on the probability distribution of <strong>{target_var}</strong>.</p>
+                <p>This analysis shows the <strong>causal effect</strong> of intervening on <strong>{safe_intervention_var}</strong>
+                and setting it to <strong>{safe_intervention_value}</strong> on the probability distribution of <strong>{safe_target_var}</strong>.</p>
                 <p>The differences between baseline and intervention probabilities represent the <strong>true causal impact</strong>,
                 not just correlation.</p>
             </div>
         </div>
-        """.format(intervention_var=intervention_var, intervention_value=intervention_value, target_var=target_var)
+        """
 
         progress(1.0, desc="✅ Intervention analysis complete!")
 
@@ -451,8 +404,8 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
         progress(1.0, desc="❌ Analysis failed")
 
         # Provide specific error guidance
-        error_details = str(e)
-        if "monotonically increasing" in error_details:
+        error_details = html.escape(str(e))
+        if "monotonically increasing" in str(e):
             error_msg = """
             ❌ Intervention analysis failed: Data discretization issue
 
@@ -465,7 +418,7 @@ def perform_causal_intervention_analysis(target_var, intervention_var, intervent
             • Check that your intervention value is within the data range
 
             **Technical details:** """ + error_details
-        elif "intervention" in error_details.lower():
+        elif "intervention" in str(e).lower():
             error_msg = f"""
             ❌ Intervention analysis failed: {error_details}
 

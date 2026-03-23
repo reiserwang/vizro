@@ -7,6 +7,7 @@ Handles network visualization and cycle resolution for causal analysis.
 import plotly.graph_objects as go
 import networkx as nx
 import numpy as np
+import html
 from causalnex.structure import StructureModel
 
 def create_network_plot(sm, edge_stats, theme, show_all_relationships=False):
@@ -66,7 +67,8 @@ def create_network_plot(sm, edge_stats, theme, show_all_relationships=False):
             # Calculate node statistics
             in_degree = G.in_degree(node)
             out_degree = G.out_degree(node)
-            node_info.append(f"Variable: {node}<br>Incoming: {in_degree}<br>Outgoing: {out_degree}")
+            safe_node = html.escape(str(node))
+            node_info.append(f"Variable: {safe_node}<br>Incoming: {in_degree}<br>Outgoing: {out_degree}")
 
         # Create node trace
         node_trace = go.Scatter(
@@ -101,7 +103,9 @@ def create_network_plot(sm, edge_stats, theme, show_all_relationships=False):
             # Get edge statistics
             correlation = G[source][target]['correlation']
             p_value = G[source][target]['p_value']
-            edge_info.append(f"{source} → {target}<br>Correlation: {correlation:.3f}<br>P-value: {p_value:.3f}")
+            safe_source = html.escape(str(source))
+            safe_target = html.escape(str(target))
+            edge_info.append(f"{safe_source} → {safe_target}<br>Correlation: {correlation:.3f}<br>P-value: {p_value:.3f}")
 
         # Create edge trace
         edge_trace = go.Scatter(
