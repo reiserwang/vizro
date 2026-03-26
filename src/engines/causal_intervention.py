@@ -6,7 +6,12 @@ Handles 'what-if' scenario analysis using do-calculus.
 
 import pandas as pd
 import numpy as np
-import gradio as gr
+try:
+    import gradio as gr
+    _progress = gr.Progress()
+except ImportError:
+    gr = None
+    _progress = None
 import html
 from causalnex.structure.notears import from_pandas
 from causalnex.network import BayesianNetwork
@@ -17,7 +22,7 @@ from core import dashboard_config
 from .causal_network_utils import has_cycles, resolve_cycles
 from .causal_discretization import create_ultra_robust_split_points
 
-def perform_causal_intervention_analysis(target_var, intervention_var, intervention_value, progress=gr.Progress()):
+def perform_causal_intervention_analysis(target_var, intervention_var, intervention_value, progress=_progress):
     """Perform causal intervention analysis (do-calculus)"""
 
     try:

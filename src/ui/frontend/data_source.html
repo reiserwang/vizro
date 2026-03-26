@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Data Source Management | Analytics Pro</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+            font-size: 20px;
+        }
+        .glass-sidebar {
+            background-color: rgba(228, 226, 228, 0.8);
+            backdrop-filter: blur(20px);
+        }
+        .mac-table-row:hover {
+            background-color: #f6f3f5;
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "surface-container-high": "#eae7ea",
+              "secondary": "#006c49",
+              "on-primary-fixed-variant": "#004493",
+              "on-secondary-fixed-variant": "#005236",
+              "inverse-surface": "#303032",
+              "surface-tint": "#005bc1",
+              "surface-container": "#f0edef",
+              "error": "#ba1a1a",
+              "on-tertiary-fixed-variant": "#2f2ebe",
+              "on-surface-variant": "#414755",
+              "on-tertiary-container": "#fffbff",
+              "on-primary": "#ffffff",
+              "background": "#fcf8fb",
+              "inverse-primary": "#adc6ff",
+              "primary-fixed-dim": "#adc6ff",
+              "outline-variant": "#c1c6d7",
+              "on-error-container": "#93000a",
+              "outline": "#717786",
+              "on-secondary": "#ffffff",
+              "on-primary-fixed": "#001a41",
+              "surface-variant": "#e4e2e4",
+              "secondary-fixed-dim": "#4edea3",
+              "surface-container-low": "#f6f3f5",
+              "on-secondary-container": "#00714d",
+              "tertiary-fixed": "#e1e0ff",
+              "on-primary-container": "#fefcff",
+              "tertiary-fixed-dim": "#c0c1ff",
+              "primary": "#0058bc",
+              "on-tertiary-fixed": "#07006c",
+              "surface-bright": "#fcf8fb",
+              "inverse-on-surface": "#f3f0f2",
+              "tertiary-container": "#6063ee",
+              "surface-container-highest": "#e4e2e4",
+              "secondary-container": "#6cf8bb",
+              "surface-dim": "#dcd9dc",
+              "on-error": "#ffffff",
+              "surface": "#fcf8fb",
+              "tertiary": "#4648d4",
+              "on-background": "#1b1b1d",
+              "error-container": "#ffdad6",
+              "on-surface": "#1b1b1d",
+              "secondary-fixed": "#6ffbbe",
+              "on-tertiary": "#ffffff",
+              "surface-container-lowest": "#ffffff",
+              "primary-fixed": "#d8e2ff",
+              "on-secondary-fixed": "#002113",
+              "primary-container": "#0070eb"
+            },
+            fontFamily: {
+              "headline": ["Inter"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+</head>
+<body class="bg-background text-on-surface h-screen overflow-hidden flex">
+<!-- NavigationDrawer (JSON Authority: Executing style_shell_layout, style_bg_color) -->
+<aside class="fixed left-0 top-0 h-full z-40 flex flex-col p-4 w-64 glass-sidebar border-r border-slate-300/50">
+<div class="mb-8 px-2">
+<h1 class="text-lg font-bold text-slate-900 tracking-tight">Analytics Pro</h1>
+</div>
+<nav class="flex flex-col gap-1">
+<!-- Data Sources (ACTIVE) -->
+<a class="flex items-center gap-3 px-3 py-2 bg-white/50 text-blue-700 shadow-sm rounded-md text-sm font-medium tracking-tight" href="data_source.html">
+<span class="material-symbols-outlined" data-icon="database" style="font-variation-settings: 'FILL' 1;">database</span>
+                Data Sources
+            </a>
+<!-- Executive Overview (Visualizations) -->
+<a class="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-300/50 hover:transition-colors duration-200 rounded-md text-sm font-medium tracking-tight" href="visualizations.html">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+                Visualizations
+            </a>
+<!-- Forecasting Engine -->
+<a class="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-300/50 hover:transition-colors duration-200 rounded-md text-sm font-medium tracking-tight" href="forecasting.html">
+<span class="material-symbols-outlined" data-icon="timeline">timeline</span>
+                Forecasting Engine
+            </a>
+<!-- Causal Analysis -->
+<a class="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-300/50 hover:transition-colors duration-200 rounded-md text-sm font-medium tracking-tight" href="causal_analysis.html">
+<span class="material-symbols-outlined" data-icon="query_stats">query_stats</span>
+                Causal Analysis
+            </a>
+<!-- System Settings -->
+<a class="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-300/50 hover:transition-colors duration-200 rounded-md text-sm font-medium tracking-tight" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+                System Settings
+            </a>
+</nav>
+<div class="mt-auto p-2">
+<div class="flex items-center gap-3 p-2 bg-white/30 rounded-lg border border-white/40">
+<div class="h-8 w-8 rounded-full bg-primary-container flex items-center justify-center text-[10px] text-white font-bold">JD</div>
+<div class="flex flex-col overflow-hidden">
+<span class="text-xs font-semibold truncate">Jane Doe</span>
+<span class="text-[10px] text-on-surface-variant truncate">Enterprise Admin</span>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 ml-64 flex flex-col h-full bg-surface">
+<!-- TopAppBar (JSON Authority: style_shell_layout, style_bg_color) -->
+<header class="sticky top-0 w-full z-30 flex justify-between items-center px-6 h-12 bg-slate-50/50 backdrop-blur-md border-b border-slate-200">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-blue-600 cursor-pointer" data-icon="menu_open">menu_open</span>
+<h2 class="font-sans text-xs font-semibold tracking-wide uppercase text-slate-900">Data Sources</h2>
+</div>
+<div class="flex items-center gap-3">
+<button class="bg-primary hover:brightness-105 active:scale-95 transition-all text-white text-[11px] font-bold px-4 py-1.5 rounded-lg flex items-center gap-2 shadow-sm">
+<span class="material-symbols-outlined text-sm" data-icon="add">add</span>
+                    Add Source
+                </button>
+<div class="h-8 w-8 rounded-full overflow-hidden border border-outline-variant">
+<img class="h-full w-full object-cover" data-alt="Professional headshot of a female technology executive with a clean minimalist background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAbssyri0_cVhML8REDHSjG5ph9YwCx8KPuqoyuLbdeE2PRaYwUdG1A07CYutFTyPTMiDGFPcyLrZcvaTUY8WsROCh14Mxcny2Ab8zUPtHQCfGyWWUt8Au7laLjbfgCGzRvglnFThoAJdD0vBTnYktRoEQrs0p5VYiqU0xPSOtX5HoRMPpCe9DGquMS_qd1Bs07EJPY3iE6ebFUjX-RSNr98RJix9w5KtL2WEcKkIswX3FwtNolIDJJqgXlwDvnW7GC9zDCQrzkvA"/>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<div class="flex-1 overflow-y-auto p-8 max-w-5xl mx-auto w-full">
+    
+    <div class="mb-8">
+        <h3 class="text-xl font-bold tracking-tight mb-2">Load Data</h3>
+        <p class="text-sm text-on-surface-variant">Upload a file or provide a URL to begin analyzing your data.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- File Upload Card -->
+        <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-transparent flex flex-col items-center justify-center border-2 border-dashed border-primary/30 hover:border-primary transition-colors cursor-pointer" id="drop-zone" onclick="document.getElementById('file-input').click()">
+            <div class="p-4 bg-primary/10 rounded-full text-primary mb-4">
+                <span class="material-symbols-outlined" style="font-size: 32px">cloud_upload</span>
+            </div>
+            <h4 class="font-bold mb-1">Upload File</h4>
+            <p class="text-xs text-on-surface-variant text-center mb-4">Drag and drop your CSV, Excel, JSON or Parquet file here, or click to browse.</p>
+            <input type="file" id="file-input" class="hidden" accept=".csv,.xlsx,.xls,.json,.parquet" onchange="handleFileUpload(event)">
+            <button class="bg-primary text-white text-xs font-bold px-4 py-2 rounded-lg">Select File</button>
+        </div>
+
+        <!-- URL Load Card -->
+        <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-transparent">
+            <h4 class="font-bold mb-4 flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary">link</span>
+                Load from URL
+            </h4>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">Data URL</label>
+                    <input id="url-input" class="w-full bg-surface-container-low border-none rounded-lg text-sm px-4 py-2.5 focus:ring-2 focus:ring-primary/20" type="url" placeholder="https://example.com/data.csv"/>
+                </div>
+                <button onclick="handleUrlLoad()" class="w-full bg-primary text-white text-xs font-bold px-4 py-2.5 rounded-lg hover:brightness-105 shadow-sm" id="btn-load-url">Load Data from URL</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status & Results Area -->
+    <div id="status-area" class="mt-8 hidden">
+        <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-transparent">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="p-2 bg-secondary/10 rounded-full text-secondary">
+                    <span class="material-symbols-outlined">check_circle</span>
+                </div>
+                <div>
+                    <h4 class="font-bold text-secondary" id="status-title">Data Loaded Successfully</h4>
+                    <p class="text-xs text-on-surface-variant" id="status-desc">1,245 rows loaded.</p>
+                </div>
+            </div>
+
+            <div>
+                <h5 class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-3">Detected Columns</h5>
+                <div class="flex flex-wrap gap-2" id="columns-container">
+                    <!-- Column chips will be injected here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const dropZone = document.getElementById('drop-zone');
+    const statusArea = document.getElementById('status-area');
+    const statusTitle = document.getElementById('status-title');
+    const statusDesc = document.getElementById('status-desc');
+    const columnsContainer = document.getElementById('columns-container');
+
+    // Drag and drop logic
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('bg-primary/5');
+    });
+    dropZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('bg-primary/5');
+    });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('bg-primary/5');
+        if (e.dataTransfer.files.length) {
+            uploadFile(e.dataTransfer.files[0]);
+        }
+    });
+
+    function handleFileUpload(event) {
+        if (event.target.files.length) {
+            uploadFile(event.target.files[0]);
+        }
+    }
+
+    async function uploadFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        statusTitle.innerText = "Uploading...";
+        statusTitle.className = "font-bold text-primary";
+        statusDesc.innerText = "Processing file, please wait.";
+        document.querySelector('#status-area .material-symbols-outlined').innerText = "sync";
+        document.querySelector('#status-area .material-symbols-outlined').parentElement.className = "p-2 bg-primary/10 rounded-full text-primary animate-spin";
+        columnsContainer.innerHTML = "";
+        statusArea.classList.remove('hidden');
+
+        try {
+            const response = await fetch('/api/v1/upload', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            
+            if (!response.ok) throw new Error(data.detail || "Upload failed");
+            
+            showSuccess(data);
+        } catch (err) {
+            showError(err.message);
+        }
+    }
+
+    async function handleUrlLoad() {
+        const url = document.getElementById('url-input').value;
+        if (!url) return;
+
+        const btn = document.getElementById('btn-load-url');
+        btn.innerText = "Loading...";
+        btn.disabled = true;
+
+        statusTitle.innerText = "Loading URL...";
+        statusTitle.className = "font-bold text-primary";
+        statusDesc.innerText = "Fetching remote data, please wait.";
+        document.querySelector('#status-area .material-symbols-outlined').innerText = "sync";
+        document.querySelector('#status-area .material-symbols-outlined').parentElement.className = "p-2 bg-primary/10 rounded-full text-primary animate-spin";
+        columnsContainer.innerHTML = "";
+        statusArea.classList.remove('hidden');
+
+        try {
+            const response = await fetch('/api/v1/load-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            const data = await response.json();
+            
+            if (!response.ok) throw new Error(data.detail || "Load failed");
+            
+            showSuccess(data);
+            
+            // Persist the columns list in session storage so other pages can use it easily
+            sessionStorage.setItem('columns', JSON.stringify(data.columns));
+            sessionStorage.setItem('numeric_columns', JSON.stringify(data.numeric_columns));
+            sessionStorage.setItem('categorical_columns', JSON.stringify(data.categorical_columns));
+            
+        } catch (err) {
+            showError(err.message);
+        } finally {
+            btn.innerText = "Load Data from URL";
+            btn.disabled = false;
+        }
+    }
+
+    function showSuccess(data) {
+        statusTitle.innerText = "Data Loaded Successfully!";
+        statusTitle.className = "font-bold text-secondary";
+        statusDesc.innerText = data.message;
+        document.querySelector('#status-area .material-symbols-outlined').innerText = "check_circle";
+        document.querySelector('#status-area .material-symbols-outlined').parentElement.className = "p-2 bg-secondary/10 rounded-full text-secondary";
+        
+        columnsContainer.innerHTML = data.columns.map(col => `
+            <span class="px-3 py-1 bg-surface-container text-xs rounded-full font-medium ${data.numeric_columns.includes(col) ? 'border border-primary/30 text-primary' : ''}">
+                ${data.numeric_columns.includes(col) ? '#' : 'Abc'} ${col}
+            </span>
+        `).join('');
+
+        sessionStorage.setItem('columns', JSON.stringify(data.columns));
+        sessionStorage.setItem('numeric_columns', JSON.stringify(data.numeric_columns));
+        sessionStorage.setItem('categorical_columns', JSON.stringify(data.categorical_columns));
+    }
+
+    function showError(msg) {
+        statusTitle.innerText = "Data Load Failed";
+        statusTitle.className = "font-bold text-error";
+        statusDesc.innerText = msg;
+        document.querySelector('#status-area .material-symbols-outlined').innerText = "error";
+        document.querySelector('#status-area .material-symbols-outlined').parentElement.className = "p-2 bg-error/10 rounded-full text-error";
+    }
+</script>
+</main>
+</body></html>

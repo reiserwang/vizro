@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Causal Analysis | Analytics Pro</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20; font-size: 20px; }
+        .glass-sidebar { background-color: rgba(228, 226, 228, 0.8); backdrop-filter: blur(20px); }
+        .causal-table table { width: 100%; border-collapse: collapse; text-align: left; }
+        .causal-table th, .causal-table td { border: 1px solid #e4e2e4; padding: 8px; font-size: 14px; }
+        .causal-table th { background-color: #f0edef; font-weight: bold; }
+        .intervention-html { margin-top: 1rem; padding: 1rem; border-radius: 8px; border: 1px solid #e4e2e4; background: white; max-height: 400px; overflow-y: auto; }
+        .intervention-html table { width: 100%; border-collapse: collapse; text-align: left; }
+        .intervention-html th, .intervention-html td { padding: 6px; border-bottom: 1px solid #eae7ea; font-size: 14px; }
+    </style>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#0058bc",
+                        "on-surface-variant": "#414755",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f6f3f5",
+                        "background": "#fcf8fb",
+                        "surface": "#fcf8fb",
+                        "on-surface": "#1b1b1d",
+                        "error": "#ba1a1a",
+                        "secondary": "#006c49",
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface h-screen overflow-hidden flex">
+
+    <!-- NavigationDrawer -->
+    <aside class="fixed left-0 top-0 h-full z-40 flex flex-col p-4 w-64 glass-sidebar border-r border-slate-300/50">
+        <div class="mb-8 px-2">
+            <h1 class="text-lg font-bold text-slate-900 tracking-tight">Analytics Pro</h1>
+        </div>
+        <nav class="flex flex-col gap-1">
+            <a href="data_source.html" class="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-300/50 rounded-md text-sm font-medium tracking-tight">
+                <span class="material-symbols-outlined" data-icon="database">database</span> Data Sources
+            </a>
+            <a href="visualizations.html" class="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-300/50 rounded-md text-sm font-medium tracking-tight">
+                <span class="material-symbols-outlined" data-icon="dashboard">dashboard</span> Visualizations
+            </a>
+            <a href="forecasting.html" class="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-300/50 rounded-md text-sm font-medium tracking-tight">
+                <span class="material-symbols-outlined" data-icon="timeline">timeline</span> Forecasting Engine
+            </a>
+            <!-- Causal Analysis (ACTIVE) -->
+            <a href="causal_analysis.html" class="flex items-center gap-3 px-3 py-2 bg-white/50 text-blue-700 shadow-sm rounded-md text-sm font-medium tracking-tight">
+                <span class="material-symbols-outlined" data-icon="query_stats" style="font-variation-settings: 'FILL' 1;">query_stats</span> Causal Analysis
+            </a>
+        </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 ml-64 flex flex-col h-full bg-surface">
+        <header class="sticky top-0 w-full z-30 flex px-6 h-12 bg-slate-50/50 backdrop-blur-md border-b border-slate-200 items-center justify-between">
+            <h2 class="font-sans text-xs font-semibold tracking-wide uppercase text-slate-900">Causal Discovery & Intervention</h2>
+            <!-- Switch Tabs -->
+            <div class="flex bg-slate-200 rounded-lg p-1 text-xs font-medium">
+                <button onclick="switchTab('discovery')" id="tab-discovery" class="px-4 py-1 rounded bg-white shadow-sm text-primary">Discovery</button>
+                <button onclick="switchTab('intervention')" id="tab-intervention" class="px-4 py-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-slate-100">Intervention</button>
+            </div>
+        </header>
+
+        <div class="flex-1 overflow-y-auto p-4 md:p-8 max-w-7xl mx-auto w-full">
+            
+            <!-- Discovery Tab -->
+            <div id="view-discovery" class="flex flex-col md:flex-row gap-6">
+                <!-- Controls Sidebar -->
+                <div class="w-full md:w-80 flex-shrink-0 space-y-6">
+                    <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-transparent">
+                        <h3 class="font-bold mb-4">Discovery Configuration</h3>
+                        
+                        <div class="space-y-4">
+                            <label class="flex items-center gap-2 text-sm text-on-surface">
+                                <input type="checkbox" id="hide-nonsignificant" checked class="rounded text-primary focus:ring-primary">
+                                Hide non-significant relationships
+                            </label>
+
+                            <label class="flex items-center gap-2 text-sm text-on-surface">
+                                <input type="checkbox" id="show-all" class="rounded text-primary focus:ring-primary">
+                                Show all relationships (dense graph)
+                            </label>
+
+                            <div>
+                                <label class="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">Min Correlation Threshold: <span id="min-corr-val">0.3</span></label>
+                                <input type="range" id="min-corr" min="0" max="1" step="0.05" value="0.3" class="w-full h-1.5 bg-surface-container-low rounded-lg appearance-none cursor-pointer accent-primary" oninput="document.getElementById('min-corr-val').innerText = this.value">
+                            </div>
+
+                            <button id="btn-discover" onclick="runDiscovery()" class="w-full bg-primary text-white text-xs font-bold px-4 py-2.5 rounded-lg hover:brightness-105 shadow-sm mt-4">
+                                Run CDial-NOTEARS
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="discovery-summary-box" class="hidden bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-transparent">
+                        <h3 class="font-bold mb-2">Findings</h3>
+                        <p id="discovery-summary" class="text-sm text-on-surface-variant whitespace-pre-wrap"></p>
+                    </div>
+                </div>
+
+                <!-- Plot Area -->
+                <div class="flex-1 space-y-6">
+                    <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-transparent min-h-[400px] flex flex-col">
+                        <h3 class="font-bold mb-4">Directed Acyclic Graph (DAG)</h3>
+                        <div class="flex-1 w-full" id="causal-plot-container">
+                            <div class="h-full flex items-center justify-center text-on-surface-variant flex-col gap-2">
+                                <span class="material-symbols-outlined text-4xl">account_tree</span>
+                                <p>Click Run CDial-NOTEARS to generate the DAG.</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-transparent hidden" id="table-container-box">
+                        <h3 class="font-bold mb-4">Relationship Strengths</h3>
+                        <div class="causal-table overflow-x-auto" id="table-container"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Intervention Tab -->
+            <div id="view-intervention" class="hidden flex flex-col md:flex-row gap-6">
+                <!-- Controls Sidebar -->
+                <div class="w-full md:w-80 flex-shrink-0 space-y-6">
+                    <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-transparent">
+                        <h3 class="font-bold mb-4">Simulate Intervention</h3>
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">Intervention Variable (X)</label>
+                                <select id="int-var" class="w-full bg-surface-container-low border-none rounded-lg text-sm px-3 py-2 focus:ring-2 focus:ring-primary/20"></select>
+                            </div>
+
+                            <div>
+                                <label class="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">Target Variable (Y)</label>
+                                <select id="target-var" class="w-full bg-surface-container-low border-none rounded-lg text-sm px-3 py-2 focus:ring-2 focus:ring-primary/20"></select>
+                            </div>
+
+                            <div>
+                                <label class="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">Intervention Value</label>
+                                <input type="number" id="int-val" class="w-full bg-surface-container-low border-none rounded-lg text-sm px-3 py-2 focus:ring-2 focus:ring-primary/20" value="0">
+                            </div>
+
+                            <button id="btn-intervene" onclick="runIntervention()" class="w-full bg-secondary text-white text-xs font-bold px-4 py-2.5 rounded-lg hover:brightness-105 shadow-sm mt-4">
+                                Estimate Treatment Effect
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Intervention Results -->
+                <div class="flex-1">
+                    <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-transparent min-h-[400px]">
+                        <h3 class="font-bold mb-2">Intervention Results</h3>
+                        <p id="intervention-status" class="text-sm font-medium text-primary mb-4"></p>
+                        
+                        <div id="intervention-html" class="intervention-html hidden"></div>
+                        
+                        <div id="intervention-empty" class="h-full flex items-center justify-center text-on-surface-variant flex-col gap-2 mt-12">
+                            <span class="material-symbols-outlined text-4xl">science</span>
+                            <p>Configure intervention variables and run simulation.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        // Check if data is loaded
+        const numColumns = JSON.parse(sessionStorage.getItem('numeric_columns') || '[]');
+
+        if (numColumns.length === 0) {
+            document.getElementById('causal-plot-container').innerHTML = `
+                <div class="h-full flex items-center justify-center text-error flex-col gap-2">
+                    <span class="material-symbols-outlined text-4xl">warning</span>
+                    <p>No numeric data loaded. Please go to Data Sources first.</p>
+                </div>
+            `;
+            document.getElementById('btn-discover').disabled = true;
+            document.getElementById('btn-intervene').disabled = true;
+        } else {
+            const intSelect = document.getElementById('int-var');
+            const targetSelect = document.getElementById('target-var');
+            
+            numColumns.forEach(col => {
+                const optI = document.createElement('option'); optI.value = col; optI.innerText = col;
+                const optT = document.createElement('option'); optT.value = col; optT.innerText = col;
+                intSelect.appendChild(optI);
+                targetSelect.appendChild(optT);
+            });
+            if (numColumns.length > 1) {
+                targetSelect.selectedIndex = 1;
+            }
+        }
+
+        function switchTab(tab) {
+            document.getElementById('view-discovery').classList.add('hidden');
+            document.getElementById('view-intervention').classList.add('hidden');
+            document.getElementById('tab-discovery').className = "px-4 py-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-slate-100";
+            document.getElementById('tab-intervention').className = "px-4 py-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-slate-100";
+            
+            document.getElementById('view-' + tab).classList.remove('hidden');
+            document.getElementById('tab-' + tab).className = "px-4 py-1 rounded bg-white shadow-sm text-primary";
+        }
+
+        async function runDiscovery() {
+            const btn = document.getElementById('btn-discover');
+            btn.innerText = "Running CDial-NOTEARS...";
+            btn.disabled = true;
+
+            const reqBox = {
+                hide_nonsignificant: document.getElementById('hide-nonsignificant').checked,
+                min_correlation: parseFloat(document.getElementById('min-corr').value),
+                causal_theme: "Light",
+                show_all_relationships: document.getElementById('show-all').checked
+            };
+
+            try {
+                const response = await fetch('/api/v1/causal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(reqBox)
+                });
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.detail || "Failed to generate causal graph");
+                
+                document.getElementById('causal-plot-container').innerHTML = '';
+                Plotly.newPlot('causal-plot-container', data.plot.data, data.plot.layout, {responsive: true});
+                
+                document.getElementById('table-container-box').classList.remove('hidden');
+                document.getElementById('table-container').innerHTML = data.table;
+                
+                document.getElementById('discovery-summary-box').classList.remove('hidden');
+                document.getElementById('discovery-summary').innerText = data.summary;
+                
+            } catch (err) {
+                alert("Error: " + err.message);
+            } finally {
+                btn.innerText = "Run CDial-NOTEARS";
+                btn.disabled = false;
+            }
+        }
+
+        async function runIntervention() {
+            const btn = document.getElementById('btn-intervene');
+            btn.innerText = "Estimating...";
+            btn.disabled = true;
+
+            const reqBox = {
+                intervention_var: document.getElementById('int-var').value,
+                target_var: document.getElementById('target-var').value,
+                intervention_value: parseFloat(document.getElementById('int-val').value)
+            };
+
+            try {
+                const response = await fetch('/api/v1/intervention', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(reqBox)
+                });
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.detail || "Failed to simulate intervention");
+                
+                document.getElementById('intervention-empty').classList.add('hidden');
+                document.getElementById('intervention-html').classList.remove('hidden');
+                
+                document.getElementById('intervention-html').innerHTML = data.html;
+                document.getElementById('intervention-status').innerText = data.message;
+                
+            } catch (err) {
+                alert("Error: " + err.message);
+            } finally {
+                btn.innerText = "Estimate Treatment Effect";
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -21,8 +21,13 @@ import argparse
 def main():
     """Main application entry point."""
     parser = argparse.ArgumentParser(description="Advanced Analytics Dashboard")
-    parser.add_argument("--mode", type=str, choices=["ui", "api", "both"], default="ui", 
-                        help="Run UI, API, or Both (default: ui)")
+    
+    # Default to native mode if running as a PyInstaller packaged app
+    is_frozen = getattr(sys, 'frozen', False)
+    default_mode = "native" if is_frozen else "ui"
+    
+    parser.add_argument("--mode", type=str, choices=["ui", "api", "both", "native"], default=default_mode, 
+                        help=f"Run UI, API, Both, or Native Mac App (default: {default_mode})")
     args = parser.parse_args()
     
     print(f"🚀 Starting Advanced Analytics Dashboard in '{args.mode.upper()}' mode...")
@@ -51,6 +56,55 @@ def main():
                 # Run API blocking
                 uvicorn.run(app, host="0.0.0.0", port=8000)
                 
+        if args.mode == "native":
+            import webview
+            from webview.menu import Menu, MenuAction
+            from threading import Thread
+            from api.routes import app
+            import uvicorn
+            import time
+            
+            print("🍏 Starting macOS Native Application Wrapper...")
+            
+            def start_api():
+                uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+                
+            Thread(target=start_api, daemon=True).start()
+            time.sleep(1) # wait for API to start
+            
+            webview.create_window(
+                "Vizro Analytics Dashboard", 
+                "http://127.0.0.1:8000/ui/data_source.html",
+                width=1200, 
+                height=800,
+                min_size=(800, 600),
+                transparent=True,
+                frameless=True,
+                easy_drag=True
+            )
+            
+            # Recreate the application menu for macOS to restore standard keyboard shortcuts
+            # (copy, paste, cut, select all, undo, redo, quit) 
+            # In frameless mode, the default menu is often stripped, which disables these shortcuts natively.
+            def void(): pass
+            
+            menu_items = [
+                Menu('App', [
+                    MenuAction('Quit', webview.windows[0].destroy)
+                ]),
+                Menu('Edit', [
+                    MenuAction('Undo', void),
+                    MenuAction('Redo', void),
+                    MenuAction('Cut', void),
+                    MenuAction('Copy', void),
+                    MenuAction('Paste', void),
+                    MenuAction('Select All', void),
+                ])
+            ]
+            
+            webview.start(menu=menu_items)
+            return
+
         if args.mode in ["ui", "both"]:
             print("📊 Loading modular dashboard interface...")
             

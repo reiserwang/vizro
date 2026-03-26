@@ -97,10 +97,7 @@ def create_visualization(x_axis, y_axis, color_var, chart_type, theme, y_axis_ag
 
 def create_vizro_enhanced_visualization(x_axis, y_axis, color_var, chart_type, theme, y_axis_agg, correlation_window=0):
     """Create enhanced visualization using Vizro capabilities"""
-    
-    if not VIZRO_AVAILABLE:
-        # Fallback to standard visualization
-        return create_visualization(x_axis, y_axis, color_var, chart_type, theme, y_axis_agg)
+
     
     if dashboard_config.current_data is None:
         return None
@@ -180,7 +177,8 @@ def create_enhanced_scatter_plot(df, x_axis, y_axis, color_var, chart_title_suff
         fig = px.scatter(df, x=x_axis, y=y_axis, color=color_var,
                        title=f'Enhanced {chart_title_suffix} vs {x_axis}',
                        template=template,
-                       hover_data=[col for col in df.columns if col in [x_axis, y_axis, color_var]])
+                       # color_var excluded from hover_data — Plotly handles it via color=
+                       hover_data=[col for col in df.columns if col in [x_axis, y_axis] and col != color_var])
         
         # Add trend line for datetime series if y is numeric
         if df[y_axis].dtype in ['int64', 'float64']:
@@ -206,13 +204,25 @@ def create_enhanced_scatter_plot(df, x_axis, y_axis, color_var, chart_title_suff
                               mode='lines', name='Trend Line',
                               line=dict(dash='dash', color='red'))
     else:
-        # Advanced scatter plot with trend lines and marginal distributions for numeric x-axis
-        fig = px.scatter(df, x=x_axis, y=y_axis, color=color_var,
-                       title=f'Enhanced {chart_title_suffix} vs {x_axis}',
-                       template=template,
-                       marginal_x="histogram", marginal_y="histogram",
-                       trendline="ols",
-                       hover_data=[col for col in df.columns if col in [x_axis, y_axis, color_var]])
+        # Check if x-axis is numeric — OLS trendline and marginals require numeric x
+        x_is_numeric = df[x_axis].dtype in ['int64', 'float64', 'int32', 'float32']
+
+        if x_is_numeric:
+            # Advanced scatter plot with trend lines and marginal distributions
+            fig = px.scatter(df, x=x_axis, y=y_axis, color=color_var,
+                           title=f'Enhanced {chart_title_suffix} vs {x_axis}',
+                           template=template,
+                           marginal_x="histogram", marginal_y="histogram",
+                           trendline="ols",
+                           # color_var excluded from hover_data — Plotly handles it via color=
+                           hover_data=[col for col in df.columns if col in [x_axis, y_axis] and col != color_var])
+        else:
+            # Categorical / string x-axis: simple scatter without OLS
+            fig = px.scatter(df, x=x_axis, y=y_axis, color=color_var,
+                           title=f'Enhanced {chart_title_suffix} vs {x_axis}',
+                           template=template,
+                           # color_var excluded from hover_data — Plotly handles it via color=
+                           hover_data=[col for col in df.columns if col in [x_axis, y_axis] and col != color_var])
     
     # Add correlation annotation (only for numeric variables)
     if df[x_axis].dtype in ['int64', 'float64'] and df[y_axis].dtype in ['int64', 'float64']:
@@ -342,32 +352,66 @@ def create_time_series_analysis(df, x_axis, y_axis, color_var, chart_title_suffi
     return apply_enhanced_layout(fig)
 
 def create_advanced_bar_chart(df, x_axis, y_axis, color_var, chart_title_suffix, template, y_axis_agg):
-    """Create enhanced bar chart with error bars and annotations"""
+    """Create enhanced bar chart respecting the selected y_axis_agg mode."""
+
+    # Drop rows where Y is NaN so stacked bars don't show phantom segments
+    df = df.dropna(subset=[y_axis])
+
     if color_var and color_var in df.columns:
-        # Grouped bar chart with statistics
-        agg_df = df.groupby([x_axis, color_var])[y_axis].agg(['mean', 'std', 'count']).reset_index()
-        agg_df.columns = [x_axis, color_var, 'mean', 'std', 'count']
-        
-        fig = px.bar(agg_df, x=x_axis, y='mean', color=color_var,
-                   error_y='std',
-                   title=f'{chart_title_suffix} by {x_axis} (with Error Bars)',
-                   template=template,
-                   hover_data=['count'])
-    else:
-        # Simple bar chart with value labels
         if y_axis_agg == "Count":
-            value_counts = df[x_axis].value_counts()
-            fig = px.bar(x=value_counts.index, y=value_counts.values,
-                       title=f'Count by {x_axis}', template=template)
+            # Count of records per (x, color) group
+            agg_df = df.groupby([x_axis, color_var]).size().reset_index(name=y_axis)
+            y_col = y_axis
+            title = f"Count by {x_axis} (grouped by {color_var})"
+        elif y_axis_agg == "Average":
+            agg_df = df.groupby([x_axis, color_var])[y_axis].mean().reset_index()
+            y_col = y_axis
+            title = f"Average {chart_title_suffix} by {x_axis}"
+        elif y_axis_agg == "Sum":
+            agg_df = df.groupby([x_axis, color_var])[y_axis].sum().reset_index()
+            y_col = y_axis
+            title = f"Total {chart_title_suffix} by {x_axis}"
         else:
+            # Raw Data — show each row as-is (no aggregation)
+            agg_df = df[[x_axis, color_var, y_axis]].copy()
+            y_col = y_axis
+            title = f"{chart_title_suffix} by {x_axis} (with Error Bars)"
+
+        fig = px.bar(
+            agg_df, x=x_axis, y=y_col, color=color_var,
+            title=title,
+            template=template,
+            labels={y_col: chart_title_suffix, x_axis: x_axis},
+        )
+    else:
+        if y_axis_agg == "Count":
+            value_counts = df[x_axis].value_counts().sort_index()
+            fig = px.bar(
+                x=value_counts.index, y=value_counts.values,
+                labels={"x": x_axis, "y": "Count"},
+                title=f"Count by {x_axis}", template=template,
+            )
+        elif y_axis_agg == "Average":
             agg_df = df.groupby(x_axis)[y_axis].mean().reset_index()
             fig = px.bar(agg_df, x=x_axis, y=y_axis,
-                       title=f'{chart_title_suffix} by {x_axis}', template=template)
-        
-        # Add value labels on bars
-        fig.update_traces(texttemplate='%{y:.2f}', textposition='outside')
-    
+                         labels={y_axis: f"Average {chart_title_suffix}"},
+                         title=f"Average {chart_title_suffix} by {x_axis}", template=template)
+        elif y_axis_agg == "Sum":
+            agg_df = df.groupby(x_axis)[y_axis].sum().reset_index()
+            fig = px.bar(agg_df, x=x_axis, y=y_axis,
+                         labels={y_axis: f"Total {chart_title_suffix}"},
+                         title=f"Total {chart_title_suffix} by {x_axis}", template=template)
+        else:
+            # Raw Data
+            agg_df = df[[x_axis, y_axis]].copy()
+            fig = px.bar(agg_df, x=x_axis, y=y_axis,
+                         labels={y_axis: chart_title_suffix},
+                         title=f"{chart_title_suffix} by {x_axis}", template=template)
+
+        fig.update_traces(texttemplate='%{y:.2s}', textposition='outside')
+
     return apply_enhanced_layout(fig)
+
 
 def apply_enhanced_layout(fig):
     """Apply enhanced layout for all Vizro charts"""

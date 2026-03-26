@@ -10,7 +10,12 @@ import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from datetime import datetime, timedelta
-import gradio as gr
+try:
+    import gradio as gr
+    _progress = gr.Progress()
+except ImportError:
+    gr = None
+    _progress = None
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -20,22 +25,21 @@ def prepare_time_series_data(df, target_col, additional_cols=None):
     """Prepare data for time series forecasting"""
     try:
         # Create a simple time index if none exists
-        if not any(df.dtypes == 'datetime64[ns]'):
+        # Check both columns and the index for datetime types
+        has_datetime = any(df.dtypes == 'datetime64[ns]') or pd.api.types.is_datetime64_any_dtype(df.index)
+        
+        if not has_datetime:
             df = df.copy()
             
-            # Limit the number of periods to prevent timestamp overflow
-            max_periods = min(len(df), 10000)  # Limit to 10,000 periods max
+            # Limit the number of periods to prevent timestamp overflow and performance issues
+            if len(df) > 10000:
+                df = df.iloc[-10000:].copy()
             
-            # Use daily frequency for smaller datasets, monthly for larger ones
-            if max_periods <= 1000:
-                freq = 'D'  # Daily
-                start_date = '2020-01-01'
-            elif max_periods <= 5000:
-                freq = 'W'  # Weekly
-                start_date = '2020-01-01'
-            else:
-                freq = 'M'  # Monthly
-                start_date = '2020-01-01'
+            max_periods = len(df)
+            
+            # Use daily frequency for most cases, it's safe up to 100,000+ periods
+            freq = 'D'
+            start_date = '2020-01-01'
             
             try:
                 # Create date range with safe limits
@@ -43,12 +47,11 @@ def prepare_time_series_data(df, target_col, additional_cols=None):
                     start=start_date, 
                     periods=max_periods, 
                     freq=freq
-                )[:len(df)]  # Truncate to actual data length
+                )
                 df = df.set_index('time_index')
-            except (pd.errors.OutOfBoundsDatetime, OverflowError):
+            except (pd.errors.OutOfBoundsDatetime, OverflowError, ValueError):
                 # Fallback: use simple integer index if date creation fails
-                df['time_index'] = range(len(df))
-                df = df.set_index('time_index')
+                df.index = range(len(df))
         
         # Select target and additional columns
         if additional_cols:
@@ -56,6 +59,20 @@ def prepare_time_series_data(df, target_col, additional_cols=None):
             ts_data = df[cols].dropna()
         else:
             ts_data = df[[target_col]].dropna()
+        
+        # Try to infer/set frequency if it's a DatetimeIndex
+        if isinstance(ts_data.index, pd.DatetimeIndex) and ts_data.index.freq is None:
+            try:
+                # First try to infer it
+                inferred_freq = pd.infer_freq(ts_data.index)
+                if inferred_freq:
+                    ts_data.index.freq = inferred_freq
+                else:
+                    # Fallback: if we created it ourselves, we know the freq
+                    if 'freq' in locals() and freq:
+                        ts_data.index.freq = freq
+            except:
+                pass
         
         # Ensure we have enough data for forecasting
         if len(ts_data) < 3:
@@ -140,14 +157,14 @@ def arima_forecast(data, target_col, periods, confidence_level=0.95):
             raise ValueError("Could not fit ARIMA model. Try a simpler model.")
         
         # Generate forecasts
-        forecast_result = best_model.forecast(steps=periods, alpha=1-confidence_level)
-        forecast = forecast_result
+        forecast_obj = best_model.get_forecast(steps=periods)
+        forecast = forecast_obj.predicted_mean
         
         # Get confidence intervals
-        forecast_ci = best_model.get_forecast(steps=periods, alpha=1-confidence_level).conf_int()
+        forecast_ci = forecast_obj.conf_int(alpha=1-confidence_level)
         
         return {
-            'forecast': forecast,
+            'forecast': forecast.values,
             'lower_bound': forecast_ci.iloc[:, 0].values,
             'upper_bound': forecast_ci.iloc[:, 1].values,
             'fitted_values': best_model.fittedvalues,
@@ -181,9 +198,9 @@ def sarima_forecast(data, target_col, periods, seasonal_period, confidence_level
             fitted_model = model.fit(disp=False)
         
         # Generate forecasts
-        forecast_result = fitted_model.get_forecast(steps=periods, alpha=1-confidence_level)
+        forecast_result = fitted_model.get_forecast(steps=periods)
         forecast = forecast_result.predicted_mean
-        forecast_ci = forecast_result.conf_int()
+        forecast_ci = forecast_result.conf_int(alpha=1-confidence_level)
         
         return {
             'forecast': forecast.values,
@@ -331,9 +348,9 @@ def state_space_forecast(data, target_col, periods, confidence_level=0.95):
             fitted_model = model.fit(disp=False)
         
         # Generate forecasts
-        forecast_result = fitted_model.get_forecast(steps=periods, alpha=1-confidence_level)
+        forecast_result = fitted_model.get_forecast(steps=periods)
         forecast = forecast_result.predicted_mean
-        forecast_ci = forecast_result.conf_int()
+        forecast_ci = forecast_result.conf_int(alpha=1-confidence_level)
         
         return {
             'forecast': forecast.values,
@@ -423,8 +440,8 @@ def lstm_forecast(data, target_col, periods, confidence_level=0.95):
             X.append(y_scaled[i:i+seq_length])
             Y.append(y_scaled[i+seq_length])
             
-        X_tensor = torch.tensor(X, dtype=torch.float32).unsqueeze(-1)
-        Y_tensor = torch.tensor(Y, dtype=torch.float32).unsqueeze(-1)
+        X_tensor = torch.tensor(np.array(X), dtype=torch.float32).unsqueeze(-1)
+        Y_tensor = torch.tensor(np.array(Y), dtype=torch.float32).unsqueeze(-1)
         
         class SimpleLSTM(nn.Module):
             def __init__(self):
@@ -484,7 +501,7 @@ def lstm_forecast(data, target_col, periods, confidence_level=0.95):
     except Exception as e:
         raise ValueError(f"LSTM forecast failed: {str(e)}")
 
-def perform_forecasting(target_var, additional_vars, model_type, periods, seasonal_period, confidence_level, progress=gr.Progress()):
+def perform_forecasting(target_var, additional_vars, model_type, periods, seasonal_period, confidence_level, progress=_progress):
     """Main forecasting function"""
     
     if dashboard_config.current_data is None:
@@ -564,22 +581,27 @@ def create_forecast_plot(data, target_var, result, model_type, periods):
         # Handle different index types
         if pd.api.types.is_datetime64_any_dtype(historical_dates):
             # DateTime index - try to infer frequency
-            last_date = historical_dates[-1]
-            if hasattr(last_date, 'freq') and last_date.freq:
-                freq = last_date.freq
+            if hasattr(historical_dates, 'freq') and historical_dates.freq:
+                freq = historical_dates.freq
             else:
                 # Infer frequency from data
                 if len(historical_dates) > 1:
                     try:
-                        freq = pd.infer_freq(historical_dates) or 'M'
+                        freq = pd.infer_freq(historical_dates) or 'D'
                     except:
-                        freq = 'M'
+                        freq = 'D'
                 else:
-                    freq = 'M'
+                    freq = 'D'
             
+            last_date = historical_dates[-1]
             # Create future dates
             try:
-                future_dates = pd.date_range(start=last_date + pd.Timedelta(days=30), periods=periods, freq=freq)
+                # Ensure last_date is a timestamp and we can add time to it
+                if not isinstance(last_date, pd.Timestamp):
+                    last_date = pd.Timestamp(last_date)
+                
+                # Use a more robust way to create future dates
+                future_dates = pd.date_range(start=last_date, periods=periods + 1, freq=freq)[1:]
             except:
                 # Fallback: create simple date range
                 future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=periods, freq='D')

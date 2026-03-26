@@ -10,26 +10,58 @@ import html
 from causalnex.structure.notears import from_pandas
 from sklearn.preprocessing import StandardScaler
 from scipy.stats import pearsonr
-import gradio as gr
+try:
+    import gradio as gr
+    _progress = gr.Progress()
+except ImportError:
+    gr = None
+    _progress = None
 
 from core import dashboard_config
 from core.config import CAUSAL_ANALYSIS_PARAMS
 from .causal_network_utils import has_cycles, resolve_cycles, create_network_plot
 
-def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_all_relationships=False, progress=gr.Progress()):
-    """Perform efficient causal analysis on the data with progress tracking"""
+def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_all_relationships=False, progress=_progress, target_vars=None):
+    """Perform efficient causal analysis on the data with progress tracking. Optional target_vars restricts analysis."""
 
     try:
+        def create_empty_result(message):
+            import plotly.graph_objects as go
+            fig = go.Figure()
+            clean_msg = message.replace('❌ ', '').strip().replace('. ', '.<br>')
+            fig.add_annotation(
+                text=clean_msg, xref="paper", yref="paper", x=0.5, y=0.5,
+                showarrow=False, font=dict(size=14, color="gray"), align="center"
+            )
+            fig.update_layout(
+                xaxis=dict(visible=False), yaxis=dict(visible=False),
+                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                margin=dict(l=0, r=0, t=0, b=0)
+            )
+            return fig, "<p class='text-on-surface-variant text-sm text-center py-4'>No relationship data available to tabulate.</p>", f"### ℹ️ Analysis Stopped\n{clean_msg.replace('<br>', ' ')}"
+
         progress(0.05, desc="🔍 Loading and validating data...")
 
         if dashboard_config.current_data is None:
-            return None, None, "❌ No data loaded. Please upload a dataset first."
+            return create_empty_result("❌ No data loaded. Please upload a dataset first.")
 
-        # Get numeric data only
-        df_numeric = dashboard_config.current_data.select_dtypes(include=[np.number])
+        if target_vars:
+            # Explicit targeted analysis: include all requested variables
+            # Auto-encode categorical strings into numeric factorization indices
+            df_subset = dashboard_config.current_data[target_vars].copy()
+            for col in target_vars:
+                if not pd.api.types.is_numeric_dtype(df_subset[col]):
+                    df_subset[col] = pd.factorize(df_subset[col])[0]
+            
+            df_numeric = df_subset
+            if len(df_numeric.columns) < 2:
+                return create_empty_result("❌ Causal analysis requires at least two variables (X and Y parameters).")
+        else:
+            # Global analysis: only search pre-existing numeric columns for performance
+            df_numeric = dashboard_config.current_data.select_dtypes(include=[np.number])
 
         if df_numeric.empty:
-            return None, None, "❌ No numeric columns found. Please ensure your data contains numeric variables for causal analysis."
+            return create_empty_result("❌ No numeric columns found. Please ensure your data contains numeric variables for causal analysis.")
 
         progress(0.1, desc="📊 Analyzing data characteristics...")
 
@@ -58,7 +90,13 @@ def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_al
         df_numeric = df_numeric.loc[:, df_numeric.std() > 1e-10]
 
         if df_numeric.empty:
-            return None, None, "❌ No variables with sufficient variation found. Please check your data quality."
+            return create_empty_result("❌ No variables with sufficient variation found. Please check your data quality.")
+
+        # Handle NaNs and Infinity
+        df_numeric = df_numeric.replace([np.inf, -np.inf], np.nan)
+        if df_numeric.isna().any().any():
+            progress(0.18, desc="🧹 Cleaning missing values...")
+            df_numeric = df_numeric.fillna(df_numeric.median())
 
         # Standardize the data for better NOTEARS performance
         scaler = StandardScaler()
@@ -86,19 +124,7 @@ def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_al
 
         except Exception as e:
             if "not acyclic" in str(e) or "cycle" in str(e).lower():
-                return None, None, f"""
-                ❌ Causal analysis failed: Cyclic structure detected
-
-                **Problem:** The algorithm found bidirectional relationships creating cycles.
-
-                **Solutions:**
-                • Try with fewer variables (select most important ones)
-                • Increase minimum correlation threshold to filter weak relationships
-                • Use domain knowledge to identify truly causal relationships
-                • Consider that some relationships might be correlational, not causal
-
-                **Technical Note:** {str(e)}
-                """
+                return create_empty_result(f"❌ Causal analysis failed. Cyclic structure detected from bi-directional dependencies. Try adjusting threshold.")
             else:
                 raise e
 
@@ -108,7 +134,7 @@ def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_al
         edges = sm.edges()
 
         if not edges:
-            return None, None, "❌ No causal relationships found. Try adjusting the minimum correlation threshold or check data quality."
+            return create_empty_result("❌ No causal relationships found. Try adjusting the minimum correlation threshold or check data quality.")
 
         progress(0.6, desc="📊 Calculating statistical significance...")
 
@@ -139,7 +165,7 @@ def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_al
         results_df = pd.DataFrame(edge_stats)
 
         if results_df.empty:
-            return None, None, "❌ No valid relationships found after statistical analysis."
+            return create_empty_result("❌ No valid relationships found after statistical analysis.")
 
         # Filter results based on user preferences
         if hide_nonsignificant:
@@ -149,7 +175,7 @@ def perform_causal_analysis(hide_nonsignificant, min_correlation, theme, show_al
             results_df = results_df[results_df['abs_correlation'] >= min_correlation]
 
         if results_df.empty:
-            return None, None, f"❌ No relationships found meeting criteria (p < 0.05, |r| >= {min_correlation}). Try lowering the minimum correlation threshold."
+            return create_empty_result(f"❌ No relationships found meeting criteria (p < 0.05, |r| >= {min_correlation}). Try lowering the minimum correlation threshold.")
 
         progress(0.8, desc="📋 Generating results table...")
 

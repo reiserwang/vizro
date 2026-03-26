@@ -1,59 +1,67 @@
-# 🚀 Advanced Analytics Dashboard
+# Advanced Analytics Dashboard
 
 A **professional, modular platform** for **advanced causal discovery**, **statistical analysis**, and **data visualization** with comprehensive **causal inference capabilities**, **forecasting models**, and **interactive visualizations**.
 
-## ⚡ Quick Start
+## Quick Start
 
-### **Option 1: UV (Recommended - Fastest)**
+### **Option 1: Gradio Web UI (default)**
 ```bash
-# Install and run with UV
 uv sync
 uv run python main.py
+# or: python main.py --mode ui
 ```
+Open **http://localhost:7860**
 
-### **Option 2: Direct Python**
+### **Option 2: FastAPI only**
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+python main.py --mode api
+```
+API at **http://localhost:8000**
 
-# Run restructured dashboard
-python main.py
+### **Option 3: Mac Native App**
+```bash
+# Requires: pip install pywebview
+python main.py --mode native
+```
+Launches a frameless macOS window wrapping the full dashboard UI via the FastAPI backend.
+
+### **Option 4: Both API + UI**
+```bash
+python main.py --mode both
 ```
 
-### **Access Dashboard**
-- 🌐 **URL**: http://localhost:7860
+---
+
+## Project Architecture
+
+The dashboard features a **professional, modular architecture** designed for scalability and maintainability. For more details, see the [Project Structure](#project-structure) section below.
 
 ---
 
-## 🏗️ Project Architecture
-
-The dashboard features a **professional, modular architecture** designed for scalability and maintainability. For more details, see the [Project Structure](#-project-structure) section below.
-
----
-
-## 🧠 Powered by Advanced Technologies
+## Powered by Advanced Technologies
 
 This dashboard leverages **CausalNex** for causal inference and **Vizro** for professional data visualization. For a detailed explanation of the technologies used, see the [Technical Details](docs/TECHNICAL_DETAILS.md) documentation.
 
 ---
 
-## 📊 Sample Dataset: Comprehensive Sales Analytics
+## Sample Dataset: Comprehensive Sales Analytics
 
 The dashboard includes a sophisticated **sales_data.csv** dataset designed to demonstrate all advanced features with realistic business complexity and embedded causal structures. For a deep dive into the causal structure and business logic of the sample data, see the [Deep Dive](docs/DEEP_DIVE.md) documentation.
 
 ---
 
-## 🚀 Key Features
+## Key Features
 
-- **📊 Vizro-Enhanced Visualizations**: 6 advanced chart types powered by McKinsey's Vizro framework.
-- **📈 Comprehensive Forecasting Suite**: 7 advanced models for time series forecasting.
-- **🔍 Advanced Causal Analysis**: 4 causal discovery methods, including intervention, pathway, and lag analysis.
-- **⏱️ Lag Analysis**: Discover time-delayed causal effects with cross-correlation and Granger causality testing.
-- **📊 Professional Data Tables**: Advanced filtering, sorting, and exporting capabilities.
+- **Vizro-Enhanced Visualizations**: 6 advanced chart types powered by McKinsey's Vizro framework.
+- **Interactive Localized Causal Analysis**: Directly analyze structural causal relationships between specific X, Y, and Color variables within the Visualizations tab. Features automated categorical factorization and missing-data imputation.
+- **Comprehensive Forecasting Suite**: 7 advanced models for time series forecasting.
+- **Advanced Causal Analysis**: 4 causal discovery methods, including intervention, pathway, and lag analysis.
+- **Lag Analysis**: Discover time-delayed causal effects with cross-correlation and Granger causality testing.
+- **Professional Data Tables**: Advanced filtering, sorting, and exporting capabilities.
 
 ---
 
-## ⏱️ Lag Analysis - Time-Delayed Causal Discovery
+## Lag Analysis - Time-Delayed Causal Discovery
 
 ### **Overview**
 Lag analysis reveals **time-delayed causal relationships** between variables, answering critical questions like:
@@ -81,7 +89,7 @@ Lag analysis reveals **time-delayed causal relationships** between variables, an
 - Identifies non-linear lagged patterns
 - Helps validate cross-correlation findings
 
-#### **4. Auto-Discovery Feature** 🔍
+#### **4. Auto-Discovery Feature**
 - **Automatically tests all variable pairs** in your dataset
 - Identifies significant lagged relationships across entire system
 - Network visualization of top relationships
@@ -120,17 +128,17 @@ Insight: Orders affect inventory with 5-day delivery lag
 
 ### **How to Use**
 
-1. **Navigate to "⏱️ Lag Analysis" tab**
+1. **Navigate to "Lag Analysis" tab**
 2. **For specific relationships:**
    - Select target variable (what you want to predict)
    - Select predictor variable (what might cause delays)
    - Set maximum lags to test (e.g., 10 time periods)
-   - Click "⏱️ Analyze Lags"
+   - Click "Analyze Lags"
 
 3. **For auto-discovery:**
    - Set maximum lags (1-10, default: 5)
    - Set correlation threshold (0.1-0.9, default: 0.3)
-   - Click "🔍 Find All Significant Lags"
+   - Click "Find All Significant Lags"
    - View network graph and ranked results
 
 ### **Interpretation Guide**
@@ -197,29 +205,79 @@ pip install statsmodels
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
-📁 Advanced Analytics Dashboard
-├── 📄 main.py                          # 🚀 Modern application entry point
-├── 📄 requirements.txt                 # 📦 Dependencies
-├── 📄 README.md                        # 📖 This documentation
+Advanced Analytics Dashboard
+├── main.py                          # Entry point (ui / api / both / native)
+├── requirements.txt                 # Dependencies
+├── pyproject.toml                   # Project config (UV/pip)
+├── README.md                        # This documentation
 │
-├── 📁 src/                             # 🏗️ Modular source code
-│   ├── 📁 core/                        # ⚙️ Core functionality
-│   ├── 📁 engines/                     # 🔬 Analysis engines
-│   ├── 📁 ui/                          # 🎨 User interface
-│   └── 📁 utils/                       # 🛠️ Utilities
+├── src/
+│   ├── core/
+│   │   ├── config.py                   # App-level config
+│   │   ├── dashboard_config.py         # Constants, themes, model lists
+│   │   └── data_handler.py             # Data loading & validation
+│   │
+│   ├── engines/
+│   │   ├── causal_analysis.py          # Full causal discovery (NOTEARS)
+│   │   ├── causal_discretization.py    # Variable discretization
+│   │   ├── causal_engine.py            # Causal analysis orchestrator
+│   │   ├── causal_intervention.py      # Bayesian intervention analysis
+│   │   ├── causal_network_utils.py     # Network graph utilities
+│   │   ├── forecasting_engine.py       # 8 forecasting models
+│   │   ├── lag_analysis_engine.py      # Time-lag discovery
+│   │   └── visualization_engine.py     # Plotly/Vizro chart generation
+│   │
+│   ├── ui/
+│   │   ├── dashboard.py                # Gradio app & event wiring
+│   │   ├── settings_manager.py         # Persistent user settings
+│   │   ├── components/
+│   │   │   ├── analysis_tab.py         # Causal / forecasting / lag tabs
+│   │   │   ├── config_tab.py           # Data upload & config tab
+│   │   │   └── visualization_tab.py    # Chart creation tab
+│   │   └── frontend/                # Standalone HTML views (served by API)
+│   │       ├── causal_analysis.html
+│   │       ├── data_source.html
+│   │       ├── forecasting.html
+│   │       └── visualizations.html
+│   │
+│   ├── api/
+│   │   └── routes.py                   # FastAPI endpoints (serves frontend + data)
+│   │
+│   └── utils/
+│       └── data_generator.py           # Synthetic data generation
 │
-└── 📁 docs/                            # 📚 Comprehensive documentation
+├── config/                          # Configuration files
+├── assets/                          # Static assets
+├── tests/                           # Test suite
+└── docs/
     ├── DEEP_DIVE.md
     └── TECHNICAL_DETAILS.md
 ```
 
 ---
 
-## 📞 Installation & Support
+## Forecasting Models
 
-All dependencies are automatically managed. For common issues and solutions, please refer to the main documentation.
+| Model | Description | Requirements |
+|---|---|---|
+| Linear Regression | Trend-based baseline | scikit-learn |
+| ARIMA | Auto-order ARIMA with AIC selection | statsmodels |
+| SARIMA | Seasonal ARIMA | statsmodels |
+| VAR | Multivariate vector autoregression | statsmodels |
+| Dynamic Factor Model | PCA-based latent factor forecasting | scikit-learn |
+| State-Space Model | Unobserved components (trend + seasonal) | statsmodels |
+| Nowcasting | Exponential smoothing for short-term | built-in |
+| LSTM | Deep learning sequence model | PyTorch |
+
+---
+
+## Installation & Support
+
+All core dependencies are managed via `requirements.txt` or `uv sync`. Optional packages (`statsmodels`, `torch`, `pywebview`) unlock additional forecasting models, Granger causality testing, and the Mac native app mode.
+
+For common issues and solutions, see [docs/TECHNICAL_DETAILS.md](docs/TECHNICAL_DETAILS.md).
 
 ---

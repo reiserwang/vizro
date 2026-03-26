@@ -5,7 +5,10 @@ Data Loading and Processing Module
 
 import pandas as pd
 import numpy as np
-import gradio as gr
+try:
+    import gradio as gr
+except ImportError:
+    gr = None
 import io
 import requests
 import json
@@ -142,29 +145,15 @@ def load_data_from_url(url):
          return f"❌ Error loading from URL: {str(e)}", None, None, None, None
 
 def impute_missing_values(df):
-    """Clean data by imputing missing values and handling infinite values"""
+    """Clean data by handling infinite values. 
+    Note: We no longer auto-impute numeric/categorical columns with median/mode 
+    because that falsifies data visualizations (e.g. plotting false median 
+    salaries for years where data was never collected).
+    """
     # Replace inf with NaN first
     df = df.replace([np.inf, -np.inf], np.nan)
-    
-    # Missing data imputation
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
-    categorical_cols = df.select_dtypes(include=['object', 'category']).columns
-    
-    # Impute numeric with median
-    for col in numeric_cols:
-        if df[col].isnull().any():
-            median_val = df[col].median()
-            df[col] = df[col].fillna(median_val)
-            print(f"✅ Imputed missing values in '{col}' with median")
-            
-    # Impute categorical with mode
-    for col in categorical_cols:
-        if df[col].isnull().any():
-            mode_val = df[col].mode()[0] if not df[col].mode().empty else "Unknown"
-            df[col] = df[col].fillna(mode_val)
-            print(f"✅ Imputed missing values in '{col}' with mode")
-            
     return df
+
 
 def convert_date_columns(dataframe):
     """Convert potential date columns to datetime"""

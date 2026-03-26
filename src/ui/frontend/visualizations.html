@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizations | Analytics Pro</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20; font-size: 20px; }
+        .glass-sidebar { background-color: rgba(228, 226, 228, 0.8); backdrop-filter: blur(20px); }
+    </style>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-container-highest": "#e4e2e4",
+                        "surface-container-high": "#eae7ea",
+                        "surface-container": "#f0edef",
+                        "surface-container-low": "#f6f3f5",
+                        "surface-container-lowest": "#ffffff",
+                        "primary": "#0058bc",
+                        "primary-container": "#0070eb",
+                        "secondary": "#006c49",
+                        "secondary-container": "#6cf8bb",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6",
+                        "background": "#fcf8fb",
+                        "surface": "#fcf8fb",
+                        "on-surface": "#1b1b1d",
+                        "on-surface-variant": "#414755",
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface h-screen overflow-hidden flex">
+
+    <!-- NavigationDrawer -->
+    <aside class="fixed left-0 top-0 h-full z-40 flex flex-col p-4 w-64 glass-sidebar border-r border-slate-300/50">
+        <div class="mb-8 px-2">
+            <h1 class="text-lg font-bold text-slate-900 tracking-tight">Analytics Pro</h1>
+        </div>
+        <nav class="flex flex-col gap-1">
+            <!-- Data Sources -->
+            <a href="data_source.html" class="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-300/50 hover:transition-colors duration-200 rounded-md text-sm font-medium tracking-tight">
+                <span class="material-symbols-outlined" data-icon="database">database</span>
+                Data Sources
+            </a>
+            <!-- Visualizations (ACTIVE) -->
+            <a href="visualizations.html" class="flex items-center gap-3 px-3 py-2 bg-white/50 text-blue-700 shadow-sm rounded-md text-sm font-medium tracking-tight">
+                <span class="material-symbols-outlined" data-icon="dashboard" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+                Visualizations
+            </a>
+            <!-- Forecasting Engine -->
+            <a href="forecasting.html" class="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-300/50 hover:transition-colors duration-200 rounded-md text-sm font-medium tracking-tight">
+                <span class="material-symbols-outlined" data-icon="timeline">timeline</span>
+                Forecasting Engine
+            </a>
+            <!-- Causal Analysis -->
+            <a href="causal_analysis.html" class="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-300/50 hover:transition-colors duration-200 rounded-md text-sm font-medium tracking-tight">
+                <span class="material-symbols-outlined" data-icon="query_stats">query_stats</span>
+                Causal Analysis
+            </a>
+        </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 ml-64 flex flex-col h-full bg-surface">
+        <header class="sticky top-0 w-full z-30 flex justify-between items-center px-6 h-12 bg-slate-50/50 backdrop-blur-md border-b border-slate-200">
+            <h2 class="font-sans text-xs font-semibold tracking-wide uppercase text-slate-900">Visualizations</h2>
+        </header>
+
+        <div class="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full flex flex-col md:flex-row gap-6">
+            
+            <!-- Controls Sidebar -->
+            <div class="w-full md:w-80 flex-shrink-0 space-y-6">
+                <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-transparent">
+                    <h3 class="font-bold mb-4">Chart Configuration</h3>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">X-Axis Variable</label>
+                            <select id="x-axis" class="w-full bg-surface-container-low border-none rounded-lg text-sm px-3 py-2 focus:ring-2 focus:ring-primary/20"></select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">Y-Axis Variable</label>
+                            <select id="y-axis" class="w-full bg-surface-container-low border-none rounded-lg text-sm px-3 py-2 focus:ring-2 focus:ring-primary/20"></select>
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">Color Variable (Optional)</label>
+                            <select id="color-var" class="w-full bg-surface-container-low border-none rounded-lg text-sm px-3 py-2 focus:ring-2 focus:ring-primary/20">
+                                <option value="">None</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">Chart Type</label>
+                            <select id="chart-type" class="w-full bg-surface-container-low border-none rounded-lg text-sm px-3 py-2 focus:ring-2 focus:ring-primary/20">
+                                <option>Enhanced Scatter Plot</option>
+                                <option>Statistical Box Plot</option>
+                                <option>Correlation Heatmap</option>
+                                <option>Distribution Analysis</option>
+                                <option>Time Series Analysis</option>
+                                <option>Advanced Bar Chart</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">Theme</label>
+                            <select id="theme" class="w-full bg-surface-container-low border-none rounded-lg text-sm px-3 py-2 focus:ring-2 focus:ring-primary/20">
+                                <option>Light</option>
+                                <option>Dark</option>
+                                <option>Corporate</option>
+                                <option>High Contrast</option>
+                                <option>Neon</option>
+                            </select>
+                        </div>
+
+                        <button id="btn-visualize" onclick="visualize()" class="w-full bg-primary text-white text-xs font-bold px-4 py-2.5 rounded-lg hover:brightness-105 shadow-sm mt-4">
+                            Generate Plot
+                        </button>
+                        <button id="btn-causal" onclick="visualizeCausal()" class="w-full bg-surface-container-high text-on-surface text-xs font-bold px-4 py-2.5 rounded-lg hover:brightness-105 shadow-sm mt-3 border border-outline-variant">
+                            Causal Analysis
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Plot Area -->
+            <div class="flex-1 bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-transparent min-h-[500px] flex flex-col">
+                <div class="flex-1 w-full" id="plot-container">
+                    <div class="h-full flex items-center justify-center text-on-surface-variant flex-col gap-2">
+                        <span class="material-symbols-outlined text-4xl">monitoring</span>
+                        <p>Select variables and generate a plot.</p>
+                    </div>
+                </div>
+                <div id="causal-insights" class="w-full mt-6"></div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        // Check if data is loaded
+        const columns = JSON.parse(sessionStorage.getItem('columns') || '[]');
+        const numColumns = JSON.parse(sessionStorage.getItem('numeric_columns') || '[]');
+
+        if (columns.length === 0) {
+            document.getElementById('plot-container').innerHTML = `
+                <div class="h-full flex items-center justify-center text-error flex-col gap-2">
+                    <span class="material-symbols-outlined text-4xl">warning</span>
+                    <p>No data loaded. Please go to Data Sources first.</p>
+                </div>
+            `;
+            document.getElementById('btn-visualize').disabled = true;
+        } else {
+            // Populate dropdowns
+            const xSelect = document.getElementById('x-axis');
+            const ySelect = document.getElementById('y-axis');
+            const cSelect = document.getElementById('color-var');
+            
+            columns.forEach(col => {
+                const optX = document.createElement('option'); optX.value = col; optX.innerText = col;
+                const optY = document.createElement('option'); optY.value = col; optY.innerText = col;
+                const optC = document.createElement('option'); optC.value = col; optC.innerText = col;
+                
+                xSelect.appendChild(optX);
+                ySelect.appendChild(optY);
+                cSelect.appendChild(optC);
+            });
+
+            // Auto-react to dropdown changes with debounce
+            let _debounceTimer = null;
+            function debouncedVisualize() {
+                clearTimeout(_debounceTimer);
+                _debounceTimer = setTimeout(visualize, 300);
+            }
+            ['x-axis', 'y-axis', 'color-var', 'chart-type', 'theme'].forEach(id => {
+                document.getElementById(id).addEventListener('change', debouncedVisualize);
+            });
+        }
+
+        async function visualize() {
+            const btn = document.getElementById('btn-visualize');
+            btn.innerText = "Generating...";
+            btn.disabled = true;
+
+            const reqBox = {
+                x_axis: document.getElementById('x-axis').value,
+                y_axis: document.getElementById('y-axis').value,
+                color_var: document.getElementById('color-var').value || null,
+                chart_type: document.getElementById('chart-type').value,
+                theme: document.getElementById('theme').value,
+                y_axis_agg: "Raw Data",
+                correlation_window: 0
+            };
+
+            try {
+                const response = await fetch('/api/v1/visualize', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(reqBox)
+                });
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.detail || "Failed to generate visualization");
+                
+                document.getElementById('plot-container').innerHTML = ''; // Clear prior message
+                document.getElementById('causal-insights').innerHTML = ''; // Clear causal insights
+                Plotly.newPlot('plot-container', data.plot.data, data.plot.layout, {responsive: true});
+            } catch (err) {
+                alert("Error: " + err.message);
+            } finally {
+                btn.innerText = "Generate Plot";
+                btn.disabled = false;
+            }
+        }
+
+        async function visualizeCausal() {
+            const btn = document.getElementById('btn-causal');
+            const originalText = btn.innerText;
+            btn.innerText = "Analyzing...";
+            btn.disabled = true;
+
+            const reqBox = {
+                x_axis: document.getElementById('x-axis').value,
+                y_axis: document.getElementById('y-axis').value,
+                color_var: document.getElementById('color-var').value || null,
+                chart_type: document.getElementById('chart-type').value,
+                theme: document.getElementById('theme').value,
+                y_axis_agg: "Raw Data",
+                correlation_window: 0
+            };
+
+            try {
+                const response = await fetch('/api/v1/visualize/causal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(reqBox)
+                });
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.detail || "Failed to generate causal analysis");
+                
+                document.getElementById('plot-container').innerHTML = '';
+                Plotly.newPlot('plot-container', data.plot.data, data.plot.layout, {responsive: true});
+                
+                const htmlSummary = marked.parse(data.summary);
+                document.getElementById('causal-insights').innerHTML = `
+                    <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;" class="prose max-w-none border border-outline-variant shadow-sm text-sm">
+                        ${htmlSummary}
+                    </div>
+                    ${data.table}
+                `;
+            } catch (err) {
+                alert("Error: " + err.message);
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Forecasting Engine | Architect Analytics</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-container-high": "#eae7ea",
+                        "on-secondary-fixed-variant": "#005236",
+                        "on-background": "#1b1b1d",
+                        "outline-variant": "#c1c6d7",
+                        "on-secondary": "#ffffff",
+                        "on-surface-variant": "#414755",
+                        "primary-container": "#0070eb",
+                        "on-tertiary-container": "#fffbff",
+                        "tertiary-fixed-dim": "#c0c1ff",
+                        "surface-tint": "#005bc1",
+                        "surface-bright": "#fcf8fb",
+                        "on-secondary-container": "#00714d",
+                        "secondary-fixed": "#6ffbbe",
+                        "primary": "#0058bc",
+                        "inverse-primary": "#adc6ff",
+                        "error-container": "#ffdad6",
+                        "outline": "#717786",
+                        "on-surface": "#1b1b1d",
+                        "secondary-container": "#6cf8bb",
+                        "primary-fixed-dim": "#adc6ff",
+                        "on-tertiary": "#ffffff",
+                        "tertiary-fixed": "#e1e0ff",
+                        "on-error": "#ffffff",
+                        "surface-container-highest": "#e4e2e4",
+                        "on-primary-container": "#fefcff",
+                        "on-tertiary-fixed-variant": "#2f2ebe",
+                        "on-tertiary-fixed": "#07006c",
+                        "background": "#fcf8fb",
+                        "tertiary": "#4648d4",
+                        "error": "#ba1a1a",
+                        "on-error-container": "#93000a",
+                        "on-primary-fixed": "#001a41",
+                        "on-secondary-fixed": "#002113",
+                        "inverse-surface": "#303032",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-fixed": "#d8e2ff",
+                        "surface-dim": "#dcd9dc",
+                        "on-primary-fixed-variant": "#004493",
+                        "tertiary-container": "#6063ee",
+                        "surface": "#fcf8fb",
+                        "secondary-fixed-dim": "#4edea3",
+                        "surface-variant": "#e4e2e4",
+                        "inverse-on-surface": "#f3f0f2",
+                        "secondary": "#006c49",
+                        "surface-container-low": "#f6f3f5",
+                        "on-primary": "#ffffff",
+                        "surface-container": "#f0edef"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .glass-sidebar { backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+        .chart-gradient { background: linear-gradient(180deg, rgba(0, 88, 188, 0.08) 0%, rgba(0, 88, 188, 0) 100%); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="bg-background text-on-background antialiased overflow-hidden">
+<!-- SideNavBar -->
+<aside class="h-screen w-64 fixed left-0 top-0 bg-zinc-100/80 dark:bg-zinc-900/80 backdrop-blur-2xl flex flex-col p-3 gap-1 z-50 border-r border-zinc-200/50 dark:border-zinc-800/50">
+<div class="px-4 py-6 mb-4">
+<div class="text-sm font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">Digital Architect</div>
+<div class="text-[11px] text-zinc-400 font-medium">V1.0.4 - Enterprise</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/40 dark:hover:bg-zinc-800/40 transition-all duration-200 ease-in-out rounded-md text-[13px] font-medium tracking-tight" href="data_source.html">
+<span class="material-symbols-outlined text-lg">database</span>
+                Data Sources
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/40 dark:hover:bg-zinc-800/40 transition-all duration-200 ease-in-out rounded-md text-[13px] font-medium tracking-tight" href="visualizations.html">
+<span class="material-symbols-outlined text-lg">dashboard</span>
+                Visualizations
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 bg-white/50 dark:bg-zinc-800/50 text-blue-600 dark:text-blue-400 shadow-sm rounded-md text-[13px] font-semibold tracking-tight" href="forecasting.html">
+<span class="material-symbols-outlined text-lg" style="font-variation-settings: 'FILL' 1;">trending_up</span>
+                Forecasting Engine
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/40 dark:hover:bg-zinc-800/40 transition-all duration-200 ease-in-out rounded-md text-[13px] font-medium tracking-tight" href="causal_analysis.html">
+<span class="material-symbols-outlined text-lg">analytics</span>
+                Causal Analysis
+            </a>
+</nav>
+<div class="mt-auto pt-4 border-t border-zinc-200/30">
+</div>
+</aside>
+<!-- TopAppBar -->
+<header class="h-12 sticky top-0 z-40 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-md flex items-center justify-between px-6 ml-64 border-b border-zinc-200/50 dark:border-zinc-800/50 shadow-sm shadow-zinc-900/5">
+<div class="flex items-center gap-4">
+<h1 class="text-base font-black text-zinc-900 dark:text-zinc-50">Forecasting Engine</h1>
+</div>
+</header>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<!-- Main Content Canvas -->
+<main class="ml-64 p-6 overflow-y-auto h-[calc(100vh-48px)] no-scrollbar">
+<div class="max-w-7xl mx-auto space-y-6">
+<!-- Top Section: Model Selection & Configuration -->
+<section class="grid grid-cols-12 gap-6">
+<div class="col-span-12 lg:col-span-4 bg-surface-container-lowest p-5 rounded-xl shadow-sm border border-outline-variant/10">
+<h2 class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-4">Model Architecture</h2>
+<div class="flex p-1 bg-surface-container rounded-lg mb-6">
+    <select id="model-select" class="w-full bg-surface-container-lowest border-none rounded-md text-sm font-semibold text-primary shadow-sm focus:ring-0 text-center">
+        <option value="Prophet">Prophet</option>
+        <option value="ARIMA">ARIMA</option>
+        <option value="LSTM">LSTM</option>
+    </select>
+</div>
+<div class="space-y-5">
+<div class="space-y-2">
+<div class="flex justify-between items-center">
+<label class="text-[12px] font-medium text-on-surface">P (Autoregressive)</label>
+<span class="text-[11px] font-mono bg-surface-container px-2 py-0.5 rounded" id="arima-p-val">2</span>
+</div>
+<input id="arima-p" class="w-full h-1.5 bg-surface-container rounded-lg appearance-none cursor-pointer accent-primary" type="range" min="0" max="5" value="2" oninput="document.getElementById('arima-p-val').innerText = this.value"/>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between items-center">
+<label class="text-[12px] font-medium text-on-surface">D (Integrated)</label>
+<span class="text-[11px] font-mono bg-surface-container px-2 py-0.5 rounded" id="arima-d-val">1</span>
+</div>
+<input id="arima-d" class="w-full h-1.5 bg-surface-container rounded-lg appearance-none cursor-pointer accent-primary" type="range" min="0" max="2" value="1" oninput="document.getElementById('arima-d-val').innerText = this.value"/>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between items-center">
+<label class="text-[12px] font-medium text-on-surface">Q (Moving Average)</label>
+<span class="text-[11px] font-mono bg-surface-container px-2 py-0.5 rounded" id="arima-q-val">1</span>
+</div>
+<input id="arima-q" class="w-full h-1.5 bg-surface-container rounded-lg appearance-none cursor-pointer accent-primary" type="range" min="0" max="5" value="1" oninput="document.getElementById('arima-q-val').innerText = this.value"/>
+</div>
+</div>
+</div>
+<div class="col-span-12 lg:col-span-8 bg-surface-container-lowest p-5 rounded-xl shadow-sm border border-outline-variant/10">
+<div class="flex justify-between items-center mb-6">
+<h2 class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">Advanced Tuners</h2>
+<button onclick="runForecast()" id="btn-forecast" class="text-[12px] font-semibold bg-primary text-white px-4 py-2 rounded-lg flex items-center gap-1 hover:brightness-105 shadow-sm">
+<span class="material-symbols-outlined text-sm">play_arrow</span>
+                            Run Forecast
+                        </button>
+</div>
+<div class="grid grid-cols-2 gap-8">
+<div class="space-y-6">
+<div class="flex items-center justify-between">
+<div class="flex flex-col">
+<span class="text-[13px] font-semibold text-on-surface">Target Variable</span>
+<span class="text-[11px] text-on-surface-variant">The numeric column to forecast</span>
+</div>
+<select id="target-var" class="w-32 bg-surface-container-low border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20"></select>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex flex-col">
+<span class="text-[13px] font-semibold text-on-surface">Date Variable</span>
+<span class="text-[11px] text-on-surface-variant">A valid date/time column series</span>
+</div>
+<select id="date-var" class="w-32 bg-surface-container-low border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20"></select>
+</div>
+</div>
+<div class="space-y-4">
+<div class="space-y-1.5">
+<label class="text-[12px] font-medium text-on-surface">Forecast Horizon (steps)</label>
+<input id="horizon" type="number" class="w-full bg-surface-container-low border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20" value="30">
+</div>
+<div class="space-y-1.5">
+<label class="text-[12px] font-medium text-on-surface">Confidence Level / Theme</label>
+<div class="grid grid-cols-2 gap-2">
+    <select id="forecast-theme" class="bg-surface-container-low border-none rounded-lg text-[11px] font-bold text-on-surface focus:ring-0">
+        <option>Light</option><option>Dark</option><option>Neon</option>
+    </select>
+    <button class="py-1.5 text-[11px] font-bold bg-primary text-white rounded-md">95%</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Middle Section: Main Chart -->
+<section class="bg-surface-container-lowest p-6 rounded-xl shadow-sm border border-outline-variant/10 relative overflow-hidden">
+<div class="flex justify-between items-end mb-8">
+<div>
+<h2 class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Projection Canvas</h2>
+<h3 class="text-xl font-bold text-on-surface">Demand Forecast</h3>
+</div>
+</div>
+<div class="h-96 w-full relative" id="forecast-plot-container">
+    <div class="h-full flex items-center justify-center text-on-surface-variant flex-col gap-2">
+        <span class="material-symbols-outlined text-4xl">show_chart</span>
+        <p>Run Forecast to display results.</p>
+    </div>
+</div>
+</section>
+<!-- Bottom Section: Metrics & Performance -->
+<!-- Bottom Section: Metrics & Performance -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- MAE -->
+<div class="bg-surface-container-lowest p-5 rounded-xl border border-outline-variant/10 flex flex-col">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[11px] font-bold text-on-surface-variant uppercase tracking-widest">Mean Absolute Error</span>
+<span class="material-symbols-outlined text-secondary text-sm">trending_down</span>
+</div>
+<div class="flex items-baseline gap-2 mb-4">
+<span class="text-3xl font-black tracking-tighter text-on-surface" id="metrics-mae">--</span>
+</div>
+</div>
+<!-- RMSE -->
+<div class="bg-surface-container-lowest p-5 rounded-xl border border-outline-variant/10 flex flex-col">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[11px] font-bold text-on-surface-variant uppercase tracking-widest">RMSE</span>
+<span class="material-symbols-outlined text-on-surface-variant text-sm">info</span>
+</div>
+<div class="flex items-baseline gap-2 mb-4">
+<span class="text-3xl font-black tracking-tighter text-on-surface" id="metrics-rmse">--</span>
+</div>
+</div>
+<!-- MAPE -->
+<div class="bg-surface-container-lowest p-5 rounded-xl border border-outline-variant/10 flex flex-col">
+<div class="flex justify-between items-start mb-4">
+<span class="text-[11px] font-bold text-on-surface-variant uppercase tracking-widest">MAPE %</span>
+<span class="material-symbols-outlined text-error text-sm">trending_up</span>
+</div>
+<div class="flex items-baseline gap-2 mb-4">
+<span class="text-3xl font-black tracking-tighter text-on-surface" id="metrics-mape">--<span class="text-lg">%</span></span>
+</div>
+</div>
+</section>
+</div>
+</main>
+<script>
+    const columns = JSON.parse(sessionStorage.getItem('columns') || '[]');
+    const numColumns = JSON.parse(sessionStorage.getItem('numeric_columns') || '[]');
+
+    if (columns.length === 0) {
+        document.getElementById('forecast-plot-container').innerHTML = `
+            <div class="h-full flex items-center justify-center text-error flex-col gap-2">
+                <span class="material-symbols-outlined text-4xl">warning</span>
+                <p>No data loaded. Please go to Data Sources first.</p>
+            </div>
+        `;
+        document.getElementById('btn-forecast').disabled = true;
+    } else {
+        const dSelect = document.getElementById('date-var');
+        const tSelect = document.getElementById('target-var');
+        
+        columns.forEach(col => {
+            const optD = document.createElement('option'); optD.value = col; optD.innerText = col;
+            dSelect.appendChild(optD);
+        });
+        numColumns.forEach(col => {
+            const optT = document.createElement('option'); optT.value = col; optT.innerText = col;
+            tSelect.appendChild(optT);
+        });
+
+        // best guess: first numeric for target, first col for date
+        if (columns.length > 0) dSelect.selectedIndex = 0;
+        if (numColumns.length > 1) tSelect.selectedIndex = 1;
+    }
+
+    async function runForecast() {
+        const btn = document.getElementById('btn-forecast');
+        btn.innerText = "Running...";
+        btn.disabled = true;
+
+        const reqBox = {
+            target_var: document.getElementById('target-var').value,
+            date_var: document.getElementById('date-var').value,
+            model_type: document.getElementById('model-select').value,
+            horizon: parseInt(document.getElementById('horizon').value, 10),
+            theme: document.getElementById('forecast-theme').value,
+            arima_order: [
+                parseInt(document.getElementById('arima-p').value, 10),
+                parseInt(document.getElementById('arima-d').value, 10),
+                parseInt(document.getElementById('arima-q').value, 10)
+            ]
+        };
+
+        try {
+            const response = await fetch('/api/v1/forecast', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(reqBox)
+            });
+            const data = await response.json();
+            
+            if (!response.ok) throw new Error(data.detail || "Failed to generate forecast");
+            
+            document.getElementById('forecast-plot-container').innerHTML = '';
+            Plotly.newPlot('forecast-plot-container', data.plot.data, data.plot.layout, {responsive: true});
+            
+            if (data.metrics) {
+                document.getElementById('metrics-mae').innerText = data.metrics.mae?.toFixed(2) || '--';
+                document.getElementById('metrics-rmse').innerText = data.metrics.rmse?.toFixed(2) || '--';
+                if (data.metrics.mape) {
+                    document.getElementById('metrics-mape').innerHTML = (data.metrics.mape * 100).toFixed(2) + '<span class="text-lg">%</span>';
+                }
+            }
+        } catch (err) {
+            alert("Error: " + err.message);
+        } finally {
+            btn.innerHTML = `<span class="material-symbols-outlined text-sm">play_arrow</span> Run Forecast`;
+            btn.disabled = false;
+        }
+    }
+</script>
+<!-- Contextual FAB (Only for specific actions on Home/Dashboard) -->
+<!-- Suppressed on Details per protocol -->
+</body></html>
