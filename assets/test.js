@@ -1,1 +1,0 @@
-console.log('Assets folder is working!');

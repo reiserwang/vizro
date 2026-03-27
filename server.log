@@ -1,8 +1,0 @@
-🚀 Starting Advanced Analytics Dashboard...
-📊 Loading modular dashboard interface...
-⚠️ Vizro not available: No module named 'vizro'
-   Using standard Plotly visualizations
-✅ Settings loaded from dashboard_settings.json
-✅ Modular dashboard loaded successfully!
-* Running on local URL:  http://0.0.0.0:7860
-* To create a public link, set `share=True` in `launch()`.

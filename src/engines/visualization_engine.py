@@ -23,11 +23,28 @@ def create_visualization(x_axis, y_axis, color_var, chart_type, theme, y_axis_ag
     if dashboard_config.current_data is None:
         return None
     
-    if not x_axis or not y_axis:
+    if not x_axis:
+        return None
+    
+    if not y_axis and chart_type != 'Histogram':
         return None
     
     try:
         df = dashboard_config.current_data.copy()
+        
+        # Helper to find date columns
+        date_cols = [col for col in df.columns if col.lower() in ['date', 'time', 'timestamp'] or 'date' in col.lower() or pd.api.types.is_datetime64_any_dtype(df[col])]
+        
+        # Handle color_var - if it's a date, use Month range instead
+        if color_var in date_cols and f"{color_var}_Month" in df.columns:
+            print(f"🔄 Swapping raw date {color_var} with Month range for color")
+            color_var = f"{color_var}_Month"
+        
+        # Handle x_axis - if it's a date and we are doing a bar chart or histogram, use Month range
+        if x_axis in date_cols and f"{x_axis}_Month" in df.columns:
+            if chart_type in ['Bar Chart', 'Histogram']:
+                print(f"🔄 Swapping raw date {x_axis} with Month range for {chart_type}")
+                x_axis = f"{x_axis}_Month"
         
         # Handle date columns - convert string dates to datetime
         if x_axis in df.columns:
@@ -102,7 +119,10 @@ def create_vizro_enhanced_visualization(x_axis, y_axis, color_var, chart_type, t
     if dashboard_config.current_data is None:
         return None
     
-    if not x_axis or not y_axis:
+    if not x_axis:
+        return None
+    
+    if not y_axis and chart_type not in ['Histogram', 'Distribution Analysis', 'Correlation Heatmap']:
         return None
     
     try:
@@ -110,6 +130,20 @@ def create_vizro_enhanced_visualization(x_axis, y_axis, color_var, chart_type, t
         
         # Convert date columns
         df = convert_date_columns(df)
+        
+        # Helper to find date columns
+        date_cols = [col for col in df.columns if col.lower() in ['date', 'time', 'timestamp'] or 'date' in col.lower() or pd.api.types.is_datetime64_any_dtype(df[col])]
+        
+        # Handle color_var - if it's a date, use Month range instead
+        if color_var in date_cols and f"{color_var}_Month" in df.columns:
+            print(f"🔄 Swapping raw date {color_var} with Month range for color")
+            color_var = f"{color_var}_Month"
+        
+        # Handle x_axis - if it's a date and we are doing an advanced bar chart, use Month range
+        if x_axis in date_cols and f"{x_axis}_Month" in df.columns:
+            if chart_type in ['Advanced Bar Chart']:
+                print(f"🔄 Swapping raw date {x_axis} with Month range for {chart_type}")
+                x_axis = f"{x_axis}_Month"
         
         # For scatter plots and other charts, if x_axis is a date column, ensure it's properly handled
         if x_axis in df.columns:

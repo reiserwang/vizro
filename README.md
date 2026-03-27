@@ -32,6 +32,26 @@ python main.py --mode both
 
 ---
 
+## Screenshots
+
+### Web UI — Dashboard (Mac-Native Aesthetic)
+
+> Unified design system: vibrancy glass sidebar, traffic-light controls, hairline separators, and high-density KPI row.
+
+| Visualizations | Data Source |
+|:---:|:---:|
+| ![Visualizations](docs/images/web_ui_visualizations.png) | ![Data Source](docs/images/web_ui_data_source.png) |
+
+### Forecasting Tab — Model Selection & Parameters
+
+| Linear Regression + Model List | ARIMA Parameter Inspector |
+|:---:|:---:|
+| ![Forecasting](docs/images/web_ui_forecasting.png) | ![ARIMA Params](docs/images/web_ui_forecasting_arima.png) |
+
+> The Forecasting tab provides a **3-panel layout**: model source list (left) → forecast chart (center) → per-model parameter inspector (right). Supports: **Linear Regression · ARIMA · SARIMA · VAR · State Space · Dynamic Factor**.
+
+---
+
 ## Project Architecture
 
 The dashboard features a **professional, modular architecture** designed for scalability and maintainability. For more details, see the [Project Structure](#project-structure) section below.
@@ -41,6 +61,19 @@ The dashboard features a **professional, modular architecture** designed for sca
 ## Powered by Advanced Technologies
 
 This dashboard leverages **CausalNex** for causal inference and **Vizro** for professional data visualization. For a detailed explanation of the technologies used, see the [Technical Details](docs/TECHNICAL_DETAILS.md) documentation.
+
+---
+
+## Taipei District Analytics Showcase
+
+The dashboard also supports complex regional economic data. Below are examples using the **taipei.csv** dataset, showcasing advanced visualization and causal discovery.
+
+### **1. Professional Visualization Dashboard**
+Analyzing **Disposable Income** vs. **Consumption Expenditure** across Taipei districts with interactive filtering and glassmorphism UI.
+
+### **2. Advanced Causal Analysis**
+Discovering the structural causal relationships between **Income**, **Savings**, **Consumption**, and **Household Size** using CausalNex.
+
 
 ---
 

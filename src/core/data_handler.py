@@ -14,6 +14,7 @@ import requests
 import json
 from core import dashboard_config
 from core.dashboard_config import SUPPORTED_FILE_FORMATS
+from utils.data_utils import add_time_range_columns
 
 def load_data_from_file(file_obj):
     """Load data from uploaded file (path or object)"""
@@ -166,6 +167,10 @@ def convert_date_columns(dataframe):
                     print(f"✅ Converted {col} to datetime")
                 except Exception as e:
                     print(f"⚠️ Could not convert {col} to datetime: {e}")
+            
+            # Automatically add range columns for date/time fields
+            dataframe = add_time_range_columns(dataframe, col)
+            
     return dataframe
 
 def validate_data_quality(df, target_var=None, intervention_var=None):

@@ -41,12 +41,18 @@ venv.bak/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# pytest
+# pytest / coverage
 .pytest_cache/
 .coverage
+coverage.xml
 htmlcov/
 .tox/
 .nox/
+
+# Build artifacts
+build/
+dist/
+*.spec
 
 # mypy
 .mypy_cache/

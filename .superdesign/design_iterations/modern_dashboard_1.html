@@ -1,641 +1,868 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dynamic Data Analysis Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="modern_dashboard_theme.css">
-    <style>
-        /* Additional custom styles for enhanced animations */
-        .animate-fade-in {
-            animation: fadeIn 0.6s ease-out forwards;
-        }
-        
-        .animate-slide-up {
-            animation: slideUp 0.4s ease-out forwards;
-        }
-        
-        .animate-bounce-in {
-            animation: bounceIn 0.6s ease-out forwards;
-        }
-        
-        .animate-pulse-slow {
-            animation: pulseSlow 2s ease-in-out infinite;
-        }
-        
-        .animate-spin-slow {
-            animation: spin 1s linear infinite;
-        }
-        
-        .animate-ripple {
-            animation: ripple 0.4s ease-out forwards;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        @keyframes bounceIn {
-            0% { opacity: 0; transform: scale(0.3); }
-            50% { opacity: 1; transform: scale(1.05); }
-            70% { transform: scale(0.9); }
-            100% { opacity: 1; transform: scale(1); }
-        }
-        
-        @keyframes pulseSlow {
-            0%, 100% { opacity: 0.4; }
-            50% { opacity: 1; }
-        }
-        
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        
-        @keyframes ripple {
-            0% { transform: scale(0); opacity: 1; }
-            100% { transform: scale(2); opacity: 0; }
-        }
-        
-        /* Hover effects */
-        .hover-lift {
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        
-        .hover-lift:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-        }
-        
-        .hover-glow:hover {
-            box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
-        }
-        
-        /* Custom scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        
-        ::-webkit-scrollbar-track {
-            background: var(--border-subtle-light);
-        }
-        
-        .theme-dark ::-webkit-scrollbar-track {
-            background: var(--border-subtle-dark);
-        }
-        
-        ::-webkit-scrollbar-thumb {
-            background: var(--accent-light);
-            border-radius: 4px;
-        }
-        
-        .theme-dark ::-webkit-scrollbar-thumb {
-            background: var(--accent-dark);
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--accent-hover-light);
-        }
-        
-        .theme-dark ::-webkit-scrollbar-thumb:hover {
-            background: var(--accent-hover-dark);
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vizro Analytics Dashboard</title>
+  <meta name="description" content="Advanced Causal Discovery, Visualizations & Forecasting — Analytical Precision Framework">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="modern_dashboard_theme.css">
+  <style>
+    body { background: var(--surface-container); }
+
+    /* ── Tab pane visibility ── */
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* ── Forecasting three-panel layout ── */
+    .forecast-shell {
+      display: grid;
+      grid-template-columns: 200px 1fr var(--inspector-width);
+      gap: var(--space-5);
+      align-items: start;
+    }
+
+    /* Model source-list column */
+    .model-source-list {
+      background: var(--surface-container-lowest);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-cloud);
+      overflow: hidden;
+    }
+    .model-source-header {
+      padding: var(--space-4) var(--space-5);
+      background: var(--surface-container-low);
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--on-surface-variant);
+    }
+    .model-list { padding: var(--space-2); display: flex; flex-direction: column; gap: 2px; }
+
+    /* Inspector / parameter pane */
+    .inspector-panel {
+      background: var(--surface-container-lowest);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-cloud);
+      padding: var(--space-5);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-5);
+    }
+
+    /* KPI metric cards */
+    .forecast-kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: var(--space-4);
+      margin-bottom: var(--space-5);
+    }
+    .forecast-kpi-card {
+      background: var(--surface-container-lowest);
+      border-radius: var(--radius-lg);
+      padding: var(--space-5) var(--space-6);
+      box-shadow: var(--shadow-cloud);
+    }
+    .forecast-kpi-card .label { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--on-surface-variant); }
+    .forecast-kpi-card .value { font-size: 1.5rem; font-weight: 700; font-family: var(--font-mono); color: var(--on-surface); margin-top: var(--space-1); }
+    .forecast-kpi-card .sublabel { font-size: 0.75rem; color: var(--secondary); margin-top: 2px; }
+
+    /* Insight strip */
+    .insight-strip {
+      display: flex;
+      gap: var(--space-4);
+      align-items: flex-start;
+      background: var(--primary-fixed);
+      border-radius: var(--radius-md);
+      padding: var(--space-4) var(--space-5);
+      margin-top: var(--space-5);
+    }
+    .theme-dark .insight-strip { background: var(--primary-container); }
+    .insight-icon { font-size: 1.25rem; }
+    .insight-body p { font-size: 0.8125rem; line-height: 1.55; }
+    .insight-body strong { color: var(--primary); }
+
+    /* Upload / data source helpers */
+    .data-preview-wrap { margin-top: var(--space-6); }
+    .data-preview-wrap h3 { font-size: 0.875rem; font-weight: 600; color: var(--on-surface-variant); margin-bottom: var(--space-3); }
+
+    /* Causal graph area */
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: var(--space-4);
+      padding: var(--space-12); color: var(--on-surface-variant);
+    }
+    .empty-icon { font-size: 2.5rem; }
+    .empty-title { font-size: 0.9375rem; font-weight: 600; }
+    .empty-sub { font-size: 0.8125rem; text-align: center; max-width: 260px; line-height: 1.5; }
+
+    /* Scrollable panel */
+    .scroll-y { overflow-y: auto; max-height: 70vh; }
+  </style>
 </head>
-<body class="theme-light">
-    <div id="main-container" class="animate-fade-in">
-        <!-- Header Section -->
-        <header class="dashboard-header animate-slide-up">
-            <div class="flex items-center gap-3">
-                <div class="text-4xl">📊</div>
-                <h1 class="dashboard-title">Dynamic Data Analysis Dashboard</h1>
-            </div>
-            <div class="theme-toggle">
-                <button id="light-theme-btn" class="active" onclick="switchTheme('light')">
-                    <i data-lucide="sun"></i> Light
-                </button>
-                <button id="dark-theme-btn" onclick="switchTheme('dark')">
-                    <i data-lucide="moon"></i> Dark
-                </button>
-            </div>
-        </header>
+<body class="theme-light animate-fade-in">
+<div class="app-shell">
 
-        <!-- Data Upload Section -->
-        <section class="dashboard-card animate-slide-up" style="animation-delay: 0.1s;">
-            <div class="card-header">
-                <span class="card-icon">📁</span>
-                <h2 class="card-title">Data Upload</h2>
-            </div>
-            <div class="upload-section">
-                <div class="upload-area hover-lift" id="upload-area">
-                    <p class="upload-text">📁 Drag & Drop Files Here or Click to Browse</p>
-                    <p class="text-sm text-gray-500 mt-2">Supports CSV, Excel, and JSON files</p>
-                </div>
-                <div class="url-input-group">
-                    <input type="text" class="url-input" placeholder="Or enter URL to CSV/Excel file..." id="url-input">
-                    <button class="btn btn-primary" onclick="loadFromUrl()">
-                        <i data-lucide="download"></i> Load Data
-                    </button>
-                </div>
-            </div>
-        </section>
-
-        <!-- Analysis Controls Section -->
-        <section class="dashboard-card animate-slide-up" style="animation-delay: 0.2s;">
-            <div class="card-header">
-                <span class="card-icon">🎛️</span>
-                <h2 class="card-title">Analysis Controls</h2>
-            </div>
-            <div class="controls-grid">
-                <div class="control-group">
-                    <label class="control-label">X-Axis</label>
-                    <select class="control-input" id="x-axis-select">
-                        <option value="">Select X-axis variable</option>
-                    </select>
-                </div>
-                <div class="control-group">
-                    <label class="control-label">Y-Axis</label>
-                    <select class="control-input" id="y-axis-select">
-                        <option value="">Select Y-axis variable</option>
-                    </select>
-                </div>
-                <div class="control-group">
-                    <label class="control-label">Color</label>
-                    <select class="control-input" id="color-select">
-                        <option value="">Select color variable</option>
-                    </select>
-                </div>
-                <div class="control-group">
-                    <label class="control-label">Timespan</label>
-                    <select class="control-input" id="timespan-select">
-                        <option value="all">All Time</option>
-                        <option value="3m">Last 3 Months</option>
-                        <option value="6m">Last 6 Months</option>
-                        <option value="1y">Last Year</option>
-                        <option value="ytd">Year to Date</option>
-                    </select>
-                </div>
-                <div class="control-group">
-                    <label class="control-label">Chart Type</label>
-                    <select class="control-input" id="chart-type-select">
-                        <option value="scatter">Scatter Plot</option>
-                        <option value="line">Line Chart</option>
-                        <option value="bar">Bar Chart</option>
-                        <option value="histogram">Histogram</option>
-                    </select>
-                </div>
-            </div>
-            <div class="mt-4">
-                <label class="control-label mb-2">Y-Axis Aggregation</label>
-                <div class="radio-group">
-                    <label class="radio-item selected">
-                        <input type="radio" name="y-aggregation" value="raw" checked>
-                        Raw Data
-                    </label>
-                    <label class="radio-item">
-                        <input type="radio" name="y-aggregation" value="avg">
-                        Average
-                    </label>
-                    <label class="radio-item">
-                        <input type="radio" name="y-aggregation" value="sum">
-                        Sum
-                    </label>
-                    <label class="radio-item">
-                        <input type="radio" name="y-aggregation" value="count">
-                        Count
-                    </label>
-                </div>
-            </div>
-        </section>
-
-        <!-- Main Visualization Section -->
-        <section class="dashboard-card animate-slide-up" style="animation-delay: 0.3s;">
-            <div class="card-header">
-                <span class="card-icon">📈</span>
-                <h2 class="card-title">Data Visualization</h2>
-            </div>
-            <div class="graph-container hover-glow" id="main-chart">
-                <div class="loading-container" id="chart-loading">
-                    <div class="loading-spinner"></div>
-                    <span>Loading visualization...</span>
-                </div>
-                <div id="chart-placeholder" class="hidden">
-                    <div class="text-center py-20">
-                        <div class="text-6xl mb-4">📊</div>
-                        <h3 class="text-xl font-semibold mb-2">No Data Selected</h3>
-                        <p class="text-gray-500">Please upload data and select variables to create a visualization</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Causal Analysis Section -->
-        <section class="dashboard-card animate-slide-up" style="animation-delay: 0.4s;">
-            <div class="card-header">
-                <span class="card-icon">🔍</span>
-                <h2 class="card-title">Causal Analysis</h2>
-            </div>
-            
-            <!-- Causal Controls -->
-            <div class="causal-controls">
-                <div class="filter-group">
-                    <div class="filter-toggle">
-                        <input type="checkbox" id="hide-nonsig" class="mr-2">
-                        <label for="hide-nonsig">Hide non-significant relationships (p ≥ 0.05)</label>
-                    </div>
-                    <div class="slider-container">
-                        <label class="slider-label">Min Correlation:</label>
-                        <input type="range" min="0" max="0.8" step="0.1" value="0.5" class="flex-1" id="correlation-slider">
-                        <span class="text-sm font-mono" id="correlation-value">0.5</span>
-                    </div>
-                </div>
-                <div class="flex gap-2">
-                    <button class="btn btn-secondary" onclick="fitGraph()">
-                        <i data-lucide="maximize"></i> Fit to Screen
-                    </button>
-                    <button class="btn btn-secondary" onclick="resetLayout()">
-                        <i data-lucide="refresh-cw"></i> Reset Layout
-                    </button>
-                    <button class="btn btn-secondary" onclick="exportGraph()">
-                        <i data-lucide="download"></i> Export PNG
-                    </button>
-                </div>
-            </div>
-
-            <!-- Causal Graph -->
-            <div class="graph-container" id="causal-graph-container">
-                <div class="loading-container" id="causal-loading">
-                    <div class="loading-spinner"></div>
-                    <span>Analyzing causal relationships...</span>
-                </div>
-                <div id="causal-graph" class="hidden">
-                    <!-- Cytoscape graph will be rendered here -->
-                </div>
-            </div>
-
-            <!-- Key Insights -->
-            <div class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg" id="insights-container">
-                <div class="flex items-start gap-3">
-                    <div class="text-2xl">💡</div>
-                    <div>
-                        <h3 class="font-semibold text-blue-900 mb-2">Key Insights</h3>
-                        <p class="text-blue-800" id="insights-text">Upload data to discover causal relationships and insights</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Statistical Results Section -->
-        <section class="dashboard-card animate-slide-up" style="animation-delay: 0.5s;">
-            <div class="card-header">
-                <span class="card-icon">📊</span>
-                <h2 class="card-title">Statistical Results</h2>
-                <button class="btn btn-secondary ml-auto" onclick="toggleStatsHelp()">
-                    <i data-lucide="help-circle"></i> Statistical Guide
-                </button>
-            </div>
-            
-            <!-- Results Table -->
-            <div class="data-table" id="results-table">
-                <div class="table-header">
-                    <div class="grid grid-cols-7 gap-4 text-sm">
-                        <div>Source</div>
-                        <div>Target</div>
-                        <div>Causal Weight</div>
-                        <div>Pearson r</div>
-                        <div>P-value</div>
-                        <div>R²</div>
-                        <div>Significance</div>
-                    </div>
-                </div>
-                <div class="p-4 text-center text-gray-500" id="table-placeholder">
-                    No statistical results available. Upload data and run analysis to see results.
-                </div>
-            </div>
-        </section>
-
-        <!-- Time Series Forecasting Section -->
-        <section class="dashboard-card animate-slide-up" style="animation-delay: 0.6s;">
-            <div class="card-header">
-                <span class="card-icon">📈</span>
-                <h2 class="card-title">Time Series Forecasting</h2>
-            </div>
-            
-            <!-- Forecast Controls -->
-            <div class="controls-grid mb-6">
-                <div class="control-group">
-                    <label class="control-label">Time Column</label>
-                    <select class="control-input" id="time-column-select">
-                        <option value="">Select time column</option>
-                    </select>
-                </div>
-                <div class="control-group">
-                    <label class="control-label">Target Variables</label>
-                    <select class="control-input" id="target-columns-select" multiple>
-                        <option value="">Select target variables</option>
-                    </select>
-                </div>
-                <div class="control-group">
-                    <label class="control-label">Forecasting Model</label>
-                    <select class="control-input" id="model-select">
-                        <option value="linear">Linear Regression</option>
-                        <option value="arima">ARIMA</option>
-                        <option value="sarima">SARIMA (Seasonal)</option>
-                        <option value="var">VAR (Vector Autoregression)</option>
-                        <option value="state-space">State Space Model</option>
-                        <option value="dynamic-factor">Dynamic Factor Model</option>
-                        <option value="unobserved-components">Unobserved Components</option>
-                        <option value="nowcasting">Nowcasting</option>
-                    </select>
-                </div>
-                <div class="control-group">
-                    <label class="control-label">Forecast Periods</label>
-                    <input type="number" class="control-input" id="forecast-periods" value="10" min="1" max="100">
-                </div>
-                <div class="control-group flex items-end">
-                    <button class="btn btn-primary w-full" onclick="generateForecast()">
-                        <i data-lucide="trending-up"></i> Generate Forecast
-                    </button>
-                </div>
-            </div>
-
-            <!-- Model Information -->
-            <div class="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg" id="model-info">
-                <h3 class="font-semibold mb-2">Model Information</h3>
-                <p class="text-sm text-gray-600" id="model-description">
-                    Select a model to see detailed information about its capabilities and use cases.
-                </p>
-            </div>
-
-            <!-- Forecast Visualization -->
-            <div class="graph-container" id="forecast-chart">
-                <div class="text-center py-20">
-                    <div class="text-6xl mb-4">📈</div>
-                    <h3 class="text-xl font-semibold mb-2">No Forecast Generated</h3>
-                    <p class="text-gray-500">Configure settings and click "Generate Forecast" to create predictions</p>
-                </div>
-            </div>
-        </section>
+  <!-- ══ HEADER — macOS title bar ══════════════════════════════ -->
+  <header class="app-header">
+    <div class="app-header-brand">
+      <!-- Traffic-light area (visual only) -->
+      <span style="display:flex;gap:6px;margin-right:var(--space-4);">
+        <span style="width:12px;height:12px;border-radius:50%;background:#ff5f57;"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#febc2e;"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#28c840;"></span>
+      </span>
+      <span style="font-size:1.125rem;">📊</span>
+      <span class="app-header-title">Vizro Analytics</span>
+      <span class="chip chip-live" style="margin-left:var(--space-3);">
+        <span class="chip-dot"></span> Live
+      </span>
     </div>
+    <div class="app-header-actions">
+      <div class="theme-toggle">
+        <button id="light-btn" class="active" onclick="setTheme('light')">☀️ Light</button>
+        <button id="dark-btn"  onclick="setTheme('dark')">🌙 Dark</button>
+      </div>
+    </div>
+  </header>
 
-    <!-- Statistical Help Modal -->
-    <div id="stats-help-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
-        <div class="fixed right-0 top-0 h-full w-96 bg-white shadow-xl transform translate-x-full transition-transform duration-300" id="help-panel">
-            <div class="p-6 border-b border-gray-200">
-                <div class="flex items-center justify-between">
-                    <h3 class="text-lg font-semibold">📊 Statistical Guide</h3>
-                    <button onclick="toggleStatsHelp()" class="text-gray-400 hover:text-gray-600">
-                        <i data-lucide="x"></i>
-                    </button>
-                </div>
-            </div>
-            <div class="p-6 overflow-y-auto h-full">
-                <div class="space-y-6">
-                    <!-- Causal Weight Card -->
-                    <div class="p-4 border border-gray-200 rounded-lg">
-                        <h4 class="font-semibold text-blue-600 mb-2">⚖️ Causal Weight</h4>
-                        <p class="text-sm text-gray-600 mb-3">Estimated causal effect strength</p>
-                        <div class="space-y-2 text-sm">
-                            <div class="flex justify-between">
-                                <span>Strong:</span>
-                                <span class="px-2 py-1 bg-green-100 text-green-800 rounded">|Weight| > 0.5</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span>Moderate:</span>
-                                <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded">0.2 < |Weight| ≤ 0.5</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span>Weak:</span>
-                                <span class="px-2 py-1 bg-red-100 text-red-800 rounded">|Weight| ≤ 0.2</span>
-                            </div>
-                        </div>
-                    </div>
+  <!-- ══ SIDEBAR — Finder-style vibrancy source list ═══════════ -->
+  <aside class="app-sidebar">
+    <span class="sidebar-section-label">Workspace</span>
+    <nav class="sidebar-nav" id="sidebar-nav">
+      <div class="sidebar-item" data-tab="data"     onclick="switchTab('data')">
+        <span class="nav-icon">🗂</span> Data Source
+      </div>
+      <div class="sidebar-item active" data-tab="viz" onclick="switchTab('viz')">
+        <span class="nav-icon">📈</span> Visualizations
+      </div>
+      <div class="sidebar-item" data-tab="causal"   onclick="switchTab('causal')">
+        <span class="nav-icon">🔍</span> Causal Analysis
+      </div>
+      <div class="sidebar-item" data-tab="forecast" onclick="switchTab('forecast')">
+        <span class="nav-icon">📉</span> Forecasting
+      </div>
+    </nav>
 
-                    <!-- Correlation Card -->
-                    <div class="p-4 border border-gray-200 rounded-lg">
-                        <h4 class="font-semibold text-blue-600 mb-2">📈 Correlation (r)</h4>
-                        <p class="text-sm text-gray-600 mb-3">Linear relationship strength</p>
-                        <div class="space-y-2 text-sm">
-                            <div class="flex justify-between">
-                                <span>Strong:</span>
-                                <span class="px-2 py-1 bg-green-100 text-green-800 rounded">|r| > 0.7</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span>Moderate:</span>
-                                <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded">0.3 < |r| ≤ 0.7</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span>Weak:</span>
-                                <span class="px-2 py-1 bg-red-100 text-red-800 rounded">|r| ≤ 0.3</span>
-                            </div>
-                        </div>
-                    </div>
+    <div class="sidebar-divider"></div>
+    <span class="sidebar-section-label">Session</span>
+    <nav class="sidebar-nav">
+      <div class="sidebar-item"><span class="nav-icon">⚙️</span> Settings</div>
+      <div class="sidebar-item"><span class="nav-icon">📤</span> Export</div>
+    </nav>
+  </aside>
 
-                    <!-- P-value Card -->
-                    <div class="p-4 border border-gray-200 rounded-lg">
-                        <h4 class="font-semibold text-blue-600 mb-2">🎯 P-value</h4>
-                        <p class="text-sm text-gray-600 mb-3">Statistical significance</p>
-                        <div class="space-y-2 text-sm">
-                            <div class="flex justify-between">
-                                <span>Highly Sig:</span>
-                                <span class="px-2 py-1 bg-green-100 text-green-800 rounded">p < 0.001</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span>Significant:</span>
-                                <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded">p < 0.05</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span>Not Sig:</span>
-                                <span class="px-2 py-1 bg-red-100 text-red-800 rounded">p ≥ 0.05</span>
-                            </div>
-                        </div>
-                    </div>
+  <!-- ══ MAIN ═══════════════════════════════════════════════════ -->
+  <main class="app-main">
 
-                    <!-- R² Card -->
-                    <div class="p-4 border border-gray-200 rounded-lg">
-                        <h4 class="font-semibold text-blue-600 mb-2">📊 R² (Variance)</h4>
-                        <p class="text-sm text-gray-600 mb-3">Explained variance proportion</p>
-                        <div class="space-y-2 text-sm">
-                            <div class="flex justify-between">
-                                <span>Excellent:</span>
-                                <span class="px-2 py-1 bg-green-100 text-green-800 rounded">R² > 0.75</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span>Good:</span>
-                                <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded">0.25 < R² ≤ 0.75</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span>Poor:</span>
-                                <span class="px-2 py-1 bg-red-100 text-red-800 rounded">R² ≤ 0.25</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <!-- Global KPI row -->
+    <section class="kpi-row animate-slide-up">
+      <div class="kpi-card hover-lift">
+        <span class="kpi-label">Total Records</span>
+        <span class="kpi-value" id="kpi-records">—</span>
+        <span class="kpi-delta">No data loaded</span>
+      </div>
+      <div class="kpi-card hover-lift">
+        <span class="kpi-label">Active Variables</span>
+        <span class="kpi-value" id="kpi-vars">—</span>
+        <span class="kpi-delta">Columns available</span>
+      </div>
+      <div class="kpi-card hover-lift">
+        <span class="kpi-label">Analysis Score</span>
+        <span class="kpi-value" id="kpi-score">—</span>
+        <span class="kpi-delta">Quality index</span>
+      </div>
+      <div class="kpi-card hover-lift">
+        <span class="kpi-label">Last Updated</span>
+        <span class="kpi-value" style="font-size:1.25rem;" id="kpi-time">—</span>
+        <span class="kpi-delta">Session time</span>
+      </div>
+    </section>
+
+    <!-- ── TAB: Data Source ─────────────────────────────────── -->
+    <section class="tab-pane" id="pane-data">
+      <div class="dashboard-card animate-slide-up" style="margin-bottom:var(--space-5);">
+        <div class="card-header">
+          <div class="card-header-left"><span class="card-icon">🗂</span><h2 class="card-title">Data Source</h2></div>
         </div>
-    </div>
+        <div class="card-body">
+          <div class="upload-area" onclick="document.getElementById('file-input').click()">
+            <div class="upload-icon">📁</div>
+            <p class="upload-text">Drag &amp; Drop Files Here</p>
+            <p class="upload-subtext">Supports CSV, Excel (.xlsx) and JSON</p>
+          </div>
+          <input type="file" id="file-input" accept=".csv,.xlsx,.json" style="display:none">
+          <div class="flex gap-4 mt-6" style="align-items:flex-end;">
+            <div class="control-group w-full">
+              <label class="control-label">Or load from URL</label>
+              <input type="text" class="search-input" id="url-input" placeholder="https://example.com/data.csv">
+            </div>
+            <button class="btn btn-primary" style="white-space:nowrap;" onclick="loadFromUrl()">⬇️ Load URL</button>
+          </div>
+          <p id="load-status" class="text-muted mt-4" style="font-size:0.8125rem;"></p>
+        </div>
+      </div>
+      <div class="dashboard-card">
+        <div class="card-header">
+          <div class="card-header-left"><span class="card-icon">📋</span><h2 class="card-title">Loaded Files</h2></div>
+        </div>
+        <div class="card-body">
+          <div class="file-list" id="file-list">
+            <div class="empty-state" id="file-empty">
+              <span class="empty-icon">📂</span>
+              <span class="empty-title">No Files Loaded</span>
+              <span class="empty-sub">Upload a file or enter a URL above to get started</span>
+            </div>
+          </div>
+          <div class="data-preview-wrap hidden" id="data-preview-wrap">
+            <h3>Data Preview</h3>
+            <div style="overflow-x:auto;border-radius:var(--radius-md);">
+              <table class="data-table" id="data-preview-table">
+                <thead><tr id="preview-headers"></tr></thead>
+                <tbody id="preview-body"></tbody>
+              </table>
+            </div>
+            <div class="inspector-panel mt-6">
+              <div class="inspector-group">
+                <span class="inspector-title">Dataset Summary</span>
+                <div class="inspector-row"><span class="inspector-key">Total Rows</span>    <span class="inspector-val" id="info-rows">—</span></div>
+                <div class="inspector-row"><span class="inspector-key">Total Columns</span> <span class="inspector-val" id="info-cols">—</span></div>
+                <div class="inspector-row"><span class="inspector-key">Numeric Cols</span>  <span class="inspector-val" id="info-num">—</span></div>
+                <div class="inspector-row"><span class="inspector-key">String Cols</span>   <span class="inspector-val" id="info-str">—</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-    <script>
-        // Initialize Lucide icons
-        lucide.createIcons();
+    <!-- ── TAB: Visualizations ──────────────────────────────── -->
+    <section class="tab-pane active" id="pane-viz">
+      <div class="dashboard-card animate-slide-up">
+        <div class="card-header">
+          <div class="card-header-left">
+            <span class="card-icon">📈</span>
+            <h2 class="card-title">Data Visualization</h2>
+            <span class="chip chip-live" style="margin-left:var(--space-3);"><span class="chip-dot"></span> Ready</span>
+          </div>
+          <button class="btn btn-primary" onclick="createVisualization()">✨ Create Visualization</button>
+        </div>
+        <div class="card-body">
+          <div class="controls-grid mb-6">
+            <div class="control-group">
+              <label class="control-label">X-Axis</label>
+              <select class="control-input" id="x-axis-select"><option value="">Select variable</option></select>
+            </div>
+            <div class="control-group">
+              <label class="control-label">Y-Axis</label>
+              <select class="control-input" id="y-axis-select"><option value="">Select variable</option></select>
+            </div>
+            <div class="control-group">
+              <label class="control-label">Color By</label>
+              <select class="control-input" id="color-select"><option value="">None</option></select>
+            </div>
+            <div class="control-group">
+              <label class="control-label">Chart Type</label>
+              <select class="control-input" id="chart-type-select">
+                <option value="scatter">Scatter</option>
+                <option value="line">Line</option>
+                <option value="bar">Bar</option>
+                <option value="histogram">Histogram</option>
+                <option value="heatmap">Correlation Heatmap</option>
+                <option value="box">Box Plot</option>
+              </select>
+            </div>
+            <div class="control-group">
+              <label class="control-label">Timespan</label>
+              <select class="control-input" id="timespan-select">
+                <option value="all">All Time</option>
+                <option value="3m">Last 3 Months</option>
+                <option value="6m">Last 6 Months</option>
+                <option value="1y">Last Year</option>
+                <option value="ytd">Year to Date</option>
+              </select>
+            </div>
+          </div>
+          <div class="control-group mb-6">
+            <label class="control-label">Y-Axis Aggregation</label>
+            <div class="radio-group" id="y-agg-group">
+              <label class="radio-item selected"><input type="radio" name="y-agg" value="raw" checked> Raw</label>
+              <label class="radio-item"><input type="radio" name="y-agg" value="avg"> Average</label>
+              <label class="radio-item"><input type="radio" name="y-agg" value="sum"> Sum</label>
+              <label class="radio-item"><input type="radio" name="y-agg" value="count"> Count</label>
+              <label class="radio-item"><input type="radio" name="y-agg" value="min"> Min</label>
+              <label class="radio-item"><input type="radio" name="y-agg" value="max"> Max</label>
+            </div>
+          </div>
+          <div class="graph-container" id="viz-output" style="min-height:420px;">
+            <div class="empty-state">
+              <span class="empty-icon">📊</span>
+              <span class="empty-title">No Visualization</span>
+              <span class="empty-sub">Upload data, select variables and click "Create Visualization"</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-        // Theme switching functionality
-        function switchTheme(theme) {
-            document.body.className = `theme-${theme}`;
-            document.getElementById('light-theme-btn').classList.toggle('active', theme === 'light');
-            document.getElementById('dark-theme-btn').classList.toggle('active', theme === 'dark');
-            localStorage.setItem('theme', theme);
-        }
+    <!-- ── TAB: Causal Analysis ──────────────────────────────── -->
+    <section class="tab-pane" id="pane-causal">
+      <div class="dashboard-card animate-slide-up">
+        <div class="card-header">
+          <div class="card-header-left"><span class="card-icon">🔍</span><h2 class="card-title">Causal Analysis</h2></div>
+          <div class="flex gap-4">
+            <button class="btn btn-secondary" onclick="fitGraph()">⬜ Fit</button>
+            <button class="btn btn-secondary" onclick="resetLayout()">↺ Reset</button>
+            <button class="btn btn-secondary" onclick="exportGraph()">⬇️ Export PNG</button>
+            <button class="btn btn-primary" onclick="runCausalAnalysis()">▶ Run Analysis</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="flex gap-6 mb-6" style="align-items:center;flex-wrap:wrap;">
+            <label class="radio-item" style="cursor:pointer;">
+              <input type="checkbox" id="hide-nonsig"> Hide non-significant (p ≥ 0.05)
+            </label>
+            <div class="flex items-center gap-4">
+              <span class="control-label">Min Correlation</span>
+              <input type="range" min="0" max="0.8" step="0.1" value="0.3" class="range-slider" id="corr-slider"
+                style="width:130px;" oninput="document.getElementById('corr-val').textContent=this.value">
+              <span class="font-mono" style="font-size:0.8125rem;" id="corr-val">0.3</span>
+            </div>
+          </div>
+          <p id="analysis-status" class="text-muted mb-4" style="font-size:0.8125rem;"></p>
+          <div class="graph-container" id="causal-graph-container" style="min-height:400px;">
+            <div class="empty-state">
+              <span class="empty-icon">🕸</span>
+              <span class="empty-title">No Causal Graph</span>
+              <span class="empty-sub">Upload data and click "Run Analysis" to discover relationships</span>
+            </div>
+          </div>
+          <div class="insight-strip mt-6">
+            <span class="insight-icon">💡</span>
+            <div class="insight-body">
+              <strong>Key Insights</strong>
+              <p id="insights-text">Upload data and run causal analysis to discover insights about your variables.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-        // Load saved theme
-        const savedTheme = localStorage.getItem('theme') || 'light';
-        switchTheme(savedTheme);
+    <!-- ── TAB: Forecasting ──────────────────────────────────── -->
+    <section class="tab-pane" id="pane-forecast">
 
-        // Radio button functionality
-        document.querySelectorAll('input[name="y-aggregation"]').forEach(radio => {
-            radio.addEventListener('change', function() {
-                document.querySelectorAll('.radio-item').forEach(item => {
-                    item.classList.remove('selected');
-                });
-                this.closest('.radio-item').classList.add('selected');
-            });
-        });
+      <!-- Performance KPI row -->
+      <div class="forecast-kpi-row animate-slide-up">
+        <div class="forecast-kpi-card hover-lift">
+          <div class="label">MAE</div>
+          <div class="value" id="kpi-mae">—</div>
+          <div class="sublabel">Mean Abs Error</div>
+        </div>
+        <div class="forecast-kpi-card hover-lift">
+          <div class="label">RMSE</div>
+          <div class="value" id="kpi-rmse">—</div>
+          <div class="sublabel">Root MSE</div>
+        </div>
+        <div class="forecast-kpi-card hover-lift">
+          <div class="label">R²</div>
+          <div class="value" id="kpi-r2">—</div>
+          <div class="sublabel">Variance explained</div>
+        </div>
+        <div class="forecast-kpi-card hover-lift">
+          <div class="label">MAPE</div>
+          <div class="value" id="kpi-mape">—</div>
+          <div class="sublabel">Mean Abs % Error</div>
+        </div>
+      </div>
 
-        // Correlation slider
-        const correlationSlider = document.getElementById('correlation-slider');
-        const correlationValue = document.getElementById('correlation-value');
-        correlationSlider.addEventListener('input', function() {
-            correlationValue.textContent = this.value;
-        });
+      <!-- Three-panel layout: Model list | Chart | Parameters -->
+      <div class="forecast-shell">
 
-        // Placeholder functions for dashboard functionality
-        function loadFromUrl() {
-            const url = document.getElementById('url-input').value;
-            if (url) {
-                showLoading('chart-loading');
-                // Simulate loading
-                setTimeout(() => {
-                    hideLoading('chart-loading');
-                    showElement('chart-placeholder');
-                }, 2000);
-            }
-        }
+        <!-- ① Model source list -->
+        <div class="model-source-list">
+          <div class="model-source-header">Models</div>
+          <div class="model-list">
+            <div class="model-card active" data-model="linear"    onclick="selectModel(this)">
+              <span class="model-icon">📐</span> Linear Reg
+            </div>
+            <div class="model-card" data-model="arima"     onclick="selectModel(this)">
+              <span class="model-icon">📉</span> ARIMA
+            </div>
+            <div class="model-card" data-model="sarima"    onclick="selectModel(this)">
+              <span class="model-icon">🌊</span> SARIMA
+            </div>
+            <div class="model-card" data-model="var"       onclick="selectModel(this)">
+              <span class="model-icon">🔗</span> VAR
+            </div>
+            <div class="model-card" data-model="state"     onclick="selectModel(this)">
+              <span class="model-icon">📦</span> State Space
+            </div>
+            <div class="model-card" data-model="dynfactor" onclick="selectModel(this)">
+              <span class="model-icon">🔬</span> Dynamic Factor
+            </div>
+          </div>
+        </div>
 
-        function fitGraph() {
-            // Placeholder for graph fitting
-            console.log('Fitting graph to screen...');
-        }
+        <!-- ② Main chart card -->
+        <div class="dashboard-card">
+          <div class="card-header">
+            <div class="card-header-left">
+              <span class="card-icon">📉</span>
+              <h2 class="card-title" id="model-name-label">Linear Regression</h2>
+              <span class="chip chip-live" style="margin-left:var(--space-3);"><span class="chip-dot"></span> Model Ready</span>
+            </div>
+            <button class="btn btn-primary" onclick="runForecast()">▶ Run Forecast</button>
+          </div>
+          <div class="card-body">
+            <!-- Target + Horizon -->
+            <div class="controls-grid mb-5" style="grid-template-columns:1fr 1fr 1fr;">
+              <div class="control-group">
+                <label class="control-label">Target Variable</label>
+                <select class="control-input" id="forecast-target"><option value="">Select variable</option></select>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Forecast Periods</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('forecast-periods',-1)">−</button>
+                  <input type="number" class="stepper-input" id="forecast-periods" value="12" min="1" max="120">
+                  <button class="stepper-btn" onclick="stepper('forecast-periods',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Confidence Level</label>
+                <div class="flex items-center gap-4">
+                  <input type="range" min="80" max="99" value="95" class="range-slider" id="conf-slider"
+                    oninput="document.getElementById('conf-val').textContent=this.value+'%'">
+                  <span class="font-mono" style="font-size:0.8125rem;white-space:nowrap;" id="conf-val">95%</span>
+                </div>
+              </div>
+            </div>
 
-        function resetLayout() {
-            // Placeholder for layout reset
-            console.log('Resetting graph layout...');
-        }
+            <!-- Chart output -->
+            <div class="graph-container" id="forecast-chart" style="min-height:320px;">
+              <div class="empty-state" id="forecast-placeholder">
+                <span class="empty-icon">📈</span>
+                <span class="empty-title">No Forecast Generated</span>
+                <span class="empty-sub">Select a model, configure parameters, then click "Run Forecast"</span>
+              </div>
+            </div>
 
-        function exportGraph() {
-            // Placeholder for graph export
-            console.log('Exporting graph as PNG...');
-        }
+            <!-- Model description strip -->
+            <div class="insight-strip">
+              <span class="insight-icon">🧠</span>
+              <div class="insight-body">
+                <strong id="model-desc-title">Linear Regression</strong>
+                <p id="model-desc">A simple baseline that fits a linear trend to the data. Best for data with a clear monotonic trend and no strong seasonality.</p>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        function generateForecast() {
-            // Placeholder for forecast generation
-            console.log('Generating forecast...');
-        }
+        <!-- ③ Parameter inspector -->
+        <div class="inspector-panel scroll-y">
+          <span class="inspector-title">Model Parameters</span>
 
-        function toggleStatsHelp() {
-            const modal = document.getElementById('stats-help-modal');
-            const panel = document.getElementById('help-panel');
-            modal.classList.toggle('hidden');
-            if (!modal.classList.contains('hidden')) {
-                panel.classList.remove('translate-x-full');
-            } else {
-                panel.classList.add('translate-x-full');
-            }
-        }
+          <!-- ── Linear Regression ── -->
+          <div class="model-param-section active" id="params-linear">
+            <div class="model-param-grid">
+              <div class="control-group">
+                <label class="control-label">Fit Intercept</label>
+                <div class="segmented-control">
+                  <input type="radio" name="lin-intercept" id="li-yes" value="yes" checked>
+                  <label for="li-yes">Yes</label>
+                  <input type="radio" name="lin-intercept" id="li-no" value="no">
+                  <label for="li-no">No</label>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Normalize</label>
+                <div class="segmented-control">
+                  <input type="radio" name="lin-norm" id="ln-yes" value="yes">
+                  <label for="ln-yes">Yes</label>
+                  <input type="radio" name="lin-norm" id="ln-no" value="no" checked>
+                  <label for="ln-no">No</label>
+                </div>
+              </div>
+              <div class="param-hint">Fits a least-squares linear trend: ŷ = β₀ + β₁t. Best for monotonically trending data without seasonality.</div>
+            </div>
+          </div>
 
-        // Utility functions
-        function showLoading(elementId) {
-            document.getElementById(elementId).classList.remove('hidden');
-        }
+          <!-- ── ARIMA ── -->
+          <div class="model-param-section" id="params-arima">
+            <div class="model-param-grid">
+              <div class="control-group">
+                <label class="control-label">p — AR Order</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('arima-p',-1)">−</button>
+                  <input type="number" class="stepper-input" id="arima-p" value="2" min="0" max="10">
+                  <button class="stepper-btn" onclick="stepper('arima-p',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">d — Differencing</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('arima-d',-1)">−</button>
+                  <input type="number" class="stepper-input" id="arima-d" value="1" min="0" max="3">
+                  <button class="stepper-btn" onclick="stepper('arima-d',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">q — MA Order</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('arima-q',-1)">−</button>
+                  <input type="number" class="stepper-input" id="arima-q" value="1" min="0" max="10">
+                  <button class="stepper-btn" onclick="stepper('arima-q',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Trend</label>
+                <select class="control-input" id="arima-trend">
+                  <option value="n">None (n)</option>
+                  <option value="c" selected>Constant (c)</option>
+                  <option value="t">Trend (t)</option>
+                  <option value="ct">Constant + Trend (ct)</option>
+                </select>
+              </div>
+              <div class="param-hint">ARIMA(p,d,q): p lagged observations, d-order differencing, q moving average terms. Use AIC/BIC to tune.</div>
+            </div>
+          </div>
 
-        function hideLoading(elementId) {
-            document.getElementById(elementId).classList.add('hidden');
-        }
+          <!-- ── SARIMA ── -->
+          <div class="model-param-section" id="params-sarima">
+            <div class="model-param-grid">
+              <div class="control-group">
+                <label class="control-label">p — AR Order</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('sarima-p',-1)">−</button>
+                  <input type="number" class="stepper-input" id="sarima-p" value="1" min="0" max="10">
+                  <button class="stepper-btn" onclick="stepper('sarima-p',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">d — Differencing</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('sarima-d',-1)">−</button>
+                  <input type="number" class="stepper-input" id="sarima-d" value="1" min="0" max="3">
+                  <button class="stepper-btn" onclick="stepper('sarima-d',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">q — MA Order</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('sarima-q',-1)">−</button>
+                  <input type="number" class="stepper-input" id="sarima-q" value="1" min="0" max="10">
+                  <button class="stepper-btn" onclick="stepper('sarima-q',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">P — Seasonal AR</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('sarima-sp',-1)">−</button>
+                  <input type="number" class="stepper-input" id="sarima-sp" value="1" min="0" max="5">
+                  <button class="stepper-btn" onclick="stepper('sarima-sp',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">D — Seasonal Diff</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('sarima-sd',-1)">−</button>
+                  <input type="number" class="stepper-input" id="sarima-sd" value="1" min="0" max="3">
+                  <button class="stepper-btn" onclick="stepper('sarima-sd',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Q — Seasonal MA</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('sarima-sq',-1)">−</button>
+                  <input type="number" class="stepper-input" id="sarima-sq" value="1" min="0" max="5">
+                  <button class="stepper-btn" onclick="stepper('sarima-sq',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Seasonal Period (m)</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('sarima-m',-1)">−</button>
+                  <input type="number" class="stepper-input" id="sarima-m" value="12" min="2" max="365">
+                  <button class="stepper-btn" onclick="stepper('sarima-m',1)">+</button>
+                </div>
+              </div>
+              <div class="param-hint">SARIMA(p,d,q)(P,D,Q)[m]. Set m=12 for monthly, m=4 for quarterly, m=7 for weekday-weekly.</div>
+            </div>
+          </div>
 
-        function showElement(elementId) {
-            document.getElementById(elementId).classList.remove('hidden');
-        }
+          <!-- ── VAR ── -->
+          <div class="model-param-section" id="params-var">
+            <div class="model-param-grid">
+              <div class="control-group">
+                <label class="control-label">Lags (p)</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('var-p',-1)">−</button>
+                  <input type="number" class="stepper-input" id="var-p" value="2" min="1" max="20">
+                  <button class="stepper-btn" onclick="stepper('var-p',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">IC Criterion</label>
+                <select class="control-input" id="var-ic">
+                  <option value="aic" selected>AIC</option>
+                  <option value="bic">BIC</option>
+                  <option value="hqic">HQIC</option>
+                  <option value="fpe">FPE</option>
+                </select>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Trend</label>
+                <select class="control-input" id="var-trend">
+                  <option value="n">None</option>
+                  <option value="c" selected>Constant</option>
+                  <option value="ct">Constant + Trend</option>
+                </select>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Exogenous Variables</label>
+                <select class="control-input" id="var-exog"><option value="">None</option></select>
+              </div>
+              <div class="param-hint">VAR(p) models k time series jointly. Each variable is expressed as a linear function of past values of all other variables.</div>
+            </div>
+          </div>
 
-        function hideElement(elementId) {
-            document.getElementById(elementId).classList.add('hidden');
-        }
+          <!-- ── State Space ── -->
+          <div class="model-param-section" id="params-state">
+            <div class="model-param-grid">
+              <div class="control-group">
+                <label class="control-label">Level</label>
+                <div class="segmented-control">
+                  <input type="radio" name="ss-level" id="ss-lv-y" value="y" checked>
+                  <label for="ss-lv-y">Yes</label>
+                  <input type="radio" name="ss-level" id="ss-lv-n" value="n">
+                  <label for="ss-lv-n">No</label>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Trend</label>
+                <div class="segmented-control">
+                  <input type="radio" name="ss-trend" id="ss-tr-y" value="y" checked>
+                  <label for="ss-tr-y">Yes</label>
+                  <input type="radio" name="ss-trend" id="ss-tr-n" value="n">
+                  <label for="ss-tr-n">No</label>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Seasonal</label>
+                <div class="segmented-control">
+                  <input type="radio" name="ss-seasonal" id="ss-se-y" value="y" checked>
+                  <label for="ss-se-y">Yes</label>
+                  <input type="radio" name="ss-seasonal" id="ss-se-n" value="n">
+                  <label for="ss-se-n">No</label>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Seasonal Period</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('ss-m',-1)">−</button>
+                  <input type="number" class="stepper-input" id="ss-m" value="12" min="2" max="365">
+                  <button class="stepper-btn" onclick="stepper('ss-m',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Error Type</label>
+                <div class="segmented-control">
+                  <input type="radio" name="ss-err" id="ss-err-add" value="add" checked>
+                  <label for="ss-err-add">Add</label>
+                  <input type="radio" name="ss-err" id="ss-err-mul" value="mul">
+                  <label for="ss-err-mul">Mul</label>
+                </div>
+              </div>
+              <div class="param-hint">Structural time series via Kalman filter. Decomposes into level, trend, and seasonal components with separate noise terms.</div>
+            </div>
+          </div>
 
-        // Add ripple effect to buttons
-        document.querySelectorAll('.btn').forEach(button => {
-            button.addEventListener('click', function(e) {
-                const ripple = document.createElement('span');
-                const rect = this.getBoundingClientRect();
-                const size = Math.max(rect.width, rect.height);
-                const x = e.clientX - rect.left - size / 2;
-                const y = e.clientY - rect.top - size / 2;
-                
-                ripple.style.width = ripple.style.height = size + 'px';
-                ripple.style.left = x + 'px';
-                ripple.style.top = y + 'px';
-                ripple.classList.add('animate-ripple');
-                
-                this.appendChild(ripple);
-                
-                setTimeout(() => {
-                    ripple.remove();
-                }, 400);
-            });
-        });
+          <!-- ── Dynamic Factor ── -->
+          <div class="model-param-section" id="params-dynfactor">
+            <div class="model-param-grid">
+              <div class="control-group">
+                <label class="control-label">Latent Factors (k)</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('df-k',-1)">−</button>
+                  <input type="number" class="stepper-input" id="df-k" value="2" min="1" max="10">
+                  <button class="stepper-btn" onclick="stepper('df-k',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Factor Lags</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('df-lags',-1)">−</button>
+                  <input type="number" class="stepper-input" id="df-lags" value="1" min="1" max="12">
+                  <button class="stepper-btn" onclick="stepper('df-lags',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Error Order</label>
+                <div class="stepper-wrap">
+                  <button class="stepper-btn" onclick="stepper('df-err-order',-1)">−</button>
+                  <input type="number" class="stepper-input" id="df-err-order" value="1" min="0" max="5">
+                  <button class="stepper-btn" onclick="stepper('df-err-order',1)">+</button>
+                </div>
+              </div>
+              <div class="control-group">
+                <label class="control-label">Error Cov</label>
+                <select class="control-input" id="df-err-cov">
+                  <option value="diagonal" selected>Diagonal</option>
+                  <option value="unstructured">Unstructured</option>
+                </select>
+              </div>
+              <div class="param-hint">Extracts k common latent factors from multivariate data via EM. Ideal for macroeconomic nowcasting with many correlated indicators.</div>
+            </div>
+          </div>
 
-        // Add hover effects to cards
-        document.querySelectorAll('.dashboard-card').forEach(card => {
-            card.classList.add('hover-lift');
-        });
+          <!-- Performance snapshot (always visible) -->
+          <div class="inspector-group" style="margin-top:var(--space-2);">
+            <span class="inspector-title">Performance Snapshot</span>
+            <div class="inspector-row"><span class="inspector-key">MAE</span>  <span class="inspector-val" id="insp-mae">—</span></div>
+            <div class="inspector-row"><span class="inspector-key">RMSE</span> <span class="inspector-val" id="insp-rmse">—</span></div>
+            <div class="inspector-row"><span class="inspector-key">R²</span>   <span class="inspector-val" id="insp-r2">—</span></div>
+            <div class="inspector-row"><span class="inspector-key">MAPE</span> <span class="inspector-val" id="insp-mape">—</span></div>
+          </div>
+        </div><!-- /inspector-panel -->
 
-        // Initialize with placeholder data
-        document.addEventListener('DOMContentLoaded', function() {
-            // Add some sample data to dropdowns
-            const sampleColumns = ['Sales', 'Marketing Spend', 'Customer Count', 'Revenue', 'Profit', 'Date'];
-            const selects = ['x-axis-select', 'y-axis-select', 'color-select', 'time-column-select'];
-            
-            selects.forEach(selectId => {
-                const select = document.getElementById(selectId);
-                if (select) {
-                    sampleColumns.forEach(column => {
-                        const option = document.createElement('option');
-                        option.value = column.toLowerCase().replace(/\s+/g, '_');
-                        option.textContent = column;
-                        select.appendChild(option);
-                    });
-                }
-            });
+      </div><!-- /forecast-shell -->
+    </section><!-- /pane-forecast -->
 
-            // Add sample target columns
-            const targetSelect = document.getElementById('target-columns-select');
-            if (targetSelect) {
-                sampleColumns.forEach(column => {
-                    const option = document.createElement('option');
-                    option.value = column.toLowerCase().replace(/\s+/g, '_');
-                    option.textContent = column;
-                    targetSelect.appendChild(option);
-                });
-            }
-        });
-    </script>
+  </main>
+</div><!-- /app-shell -->
+
+<script>
+/* ─── Theme ──────────────────────────────────────────────────── */
+function setTheme(t) {
+  document.body.classList.toggle('theme-dark', t === 'dark');
+  document.body.classList.toggle('theme-light', t === 'light');
+  document.getElementById('light-btn').classList.toggle('active', t === 'light');
+  document.getElementById('dark-btn').classList.toggle('active',  t === 'dark');
+  localStorage.setItem('vizro-theme', t);
+}
+setTheme(localStorage.getItem('vizro-theme') || 'light');
+
+/* ─── Tab switching ──────────────────────────────────────────── */
+function switchTab(tab) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  document.getElementById('pane-' + tab).classList.add('active');
+  document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+}
+
+/* ─── Stepper ────────────────────────────────────────────────── */
+function stepper(id, delta) {
+  const el = document.getElementById(id);
+  const v  = parseInt(el.value || 0, 10) + delta;
+  const mn = parseInt(el.min || -Infinity, 10);
+  const mx = parseInt(el.max || Infinity,  10);
+  el.value = Math.min(Math.max(v, mn), mx);
+}
+
+/* ─── Radio aggregation pills ────────────────────────────────── */
+document.querySelectorAll('input[name="y-agg"]').forEach(r => {
+  r.addEventListener('change', function () {
+    document.querySelectorAll('.radio-item').forEach(el => el.classList.remove('selected'));
+    this.closest('.radio-item').classList.add('selected');
+  });
+});
+
+/* ─── Model descriptions ─────────────────────────────────────── */
+const MODEL_META = {
+  linear:    { name: 'Linear Regression',  desc: 'Fits a least-squares linear trend ŷ = β₀ + β₁t. Best for monotonically trending data without seasonality.' },
+  arima:     { name: 'ARIMA',              desc: 'Auto-Regressive Integrated Moving Average. Handles non-stationary univariate series via differencing (p,d,q).' },
+  sarima:    { name: 'SARIMA (Seasonal)',   desc: 'Extends ARIMA with seasonal components (P,D,Q)[m]. Ideal for monthly/quarterly data with repeating patterns.' },
+  var:       { name: 'VAR',                desc: 'Vector Autoregression. Models k interdependent series simultaneously, capturing cross-variable dynamics.' },
+  state:     { name: 'State Space (ETS)',  desc: 'Structural decomposition into level, trend, and seasonal states via Kalman filtering.' },
+  dynfactor: { name: 'Dynamic Factor',     desc: 'Extracts k latent common factors from multivariate data via EM. Excellent for macroeconomic nowcasting.' },
+};
+
+function selectModel(el) {
+  document.querySelectorAll('.model-card').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  const m = el.dataset.model;
+
+  // Update header title and description
+  document.getElementById('model-name-label').textContent  = MODEL_META[m].name;
+  document.getElementById('model-desc-title').textContent  = MODEL_META[m].name;
+  document.getElementById('model-desc').textContent        = MODEL_META[m].desc;
+
+  // Show correct parameter panel
+  document.querySelectorAll('.model-param-section').forEach(s => s.classList.remove('active'));
+  document.getElementById('params-' + m).classList.add('active');
+}
+
+/* ─── Upload drag-and-drop ───────────────────────────────────── */
+const ua = document.querySelector('.upload-area');
+ua.addEventListener('dragover', e => { e.preventDefault(); ua.style.borderColor='var(--primary)'; });
+ua.addEventListener('dragleave', () => { ua.style.borderColor=''; });
+ua.addEventListener('drop', e => {
+  e.preventDefault(); ua.style.borderColor='';
+  const f = e.dataTransfer.files[0];
+  if (f) {
+    document.getElementById('load-status').textContent = `✅ File "${f.name}" ready (connect Gradio backend to process)`;
+    updateKPI('—','—','—');
+    showFile(f.name);
+  }
+});
+
+function loadFromUrl() {
+  const url = document.getElementById('url-input').value.trim();
+  if (!url) return;
+  document.getElementById('load-status').textContent = '⏳ Loading from URL...';
+  setTimeout(() => {
+    document.getElementById('load-status').textContent = '✅ Data loaded (connect Gradio backend for live processing)';
+    updateKPI('4.2M','28','91%');
+    showFile(url.split('/').pop() || 'remote-data.csv');
+  }, 700);
+}
+
+function updateKPI(records, vars, score) {
+  document.getElementById('kpi-records').textContent = records;
+  document.getElementById('kpi-vars').textContent    = vars;
+  document.getElementById('kpi-score').textContent   = score;
+  document.getElementById('kpi-time').textContent    = 'now';
+}
+
+function showFile(name) {
+  document.getElementById('file-empty').classList.add('hidden');
+  const list = document.getElementById('file-list');
+  const item = document.createElement('div');
+  item.className = 'file-item';
+  item.innerHTML = `
+    <span class="file-icon">📄</span>
+    <span class="file-name">${name}</span>
+    <span class="file-meta">${new Date().toLocaleDateString()}</span>
+    <span class="chip chip-live"><span class="chip-dot"></span> Loaded</span>`;
+  list.appendChild(item);
+}
+
+/* ─── Stubs ──────────────────────────────────────────────────── */
+function createVisualization() {
+  document.getElementById('viz-output').innerHTML = `
+    <div class="empty-state">
+      <span class="empty-icon" style="animation:fadeIn 1s infinite alternate;">📊</span>
+      <span class="empty-title">Generating…</span>
+      <span class="empty-sub">Connect Gradio backend for live Plotly charts</span>
+    </div>`;
+}
+function runForecast() {
+  document.getElementById('forecast-chart').innerHTML = `
+    <div class="empty-state">
+      <span class="empty-icon">⏳</span>
+      <span class="empty-title">Running Forecast…</span>
+      <span class="empty-sub">Connect Gradio backend for live predictions</span>
+    </div>`;
+}
+function runCausalAnalysis() {
+  document.getElementById('analysis-status').textContent = '⏳ Running causal discovery...';
+}
+function fitGraph()    {}
+function resetLayout() {}
+function exportGraph() {}
+</script>
 </body>
 </html>
