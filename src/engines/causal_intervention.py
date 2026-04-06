@@ -13,10 +13,6 @@ except ImportError:
     gr = None
     _progress = None
 import html
-from causalnex.structure.notears import from_pandas
-from causalnex.network import BayesianNetwork
-from causalnex.inference import InferenceEngine
-from causalnex.discretiser import Discretiser
 
 from core import dashboard_config
 from .causal_network_utils import has_cycles, resolve_cycles
@@ -24,6 +20,23 @@ from .causal_discretization import create_ultra_robust_split_points
 
 def perform_causal_intervention_analysis(target_var, intervention_var, intervention_value, progress=_progress):
     """Perform causal intervention analysis (do-calculus)"""
+
+    # Lazy-import causalnex: its pytorch subpackage imports torch unconditionally
+    # which would crash the frozen native app (torch not bundled). Import here
+    # so PyInstaller's static analyser never sees the torch dependency chain.
+    try:
+        from causalnex.structure.notears import from_pandas
+        from causalnex.network import BayesianNetwork
+        from causalnex.inference import InferenceEngine
+        from causalnex.discretiser import Discretiser
+    except ImportError as _e:
+        def _unavailable(*a, **kw):
+            return (
+                "❌ Causal intervention requires additional libraries not included in the native app."
+                " Please run in web mode: python main.py --mode ui",
+                f"Missing dependency: {_e}"
+            )
+        return _unavailable()
 
     try:
         progress(0.1, desc="🔬 Preparing intervention analysis...")

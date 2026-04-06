@@ -1,0 +1,17 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Vizro Analytics — Optional Heavy Dependencies
+# ─────────────────────────────────────────────────────────────────────────────
+# These are NOT bundled in the Mac native .app to keep it under 200 MB.
+# Install for full feature access in web/api mode:
+#   pip install -r requirements-optional.txt
+# ─────────────────────────────────────────────────────────────────────────────
+
+# LSTM Deep Learning forecasting (~276 MB, requires ~2 GB RAM)
+torch>=2.0.0
+
+# Parquet file format support (~114 MB)
+pyarrow>=10.0.0
+
+# Additional visualization backends
+matplotlib>=3.5.0
+seaborn>=0.11.0

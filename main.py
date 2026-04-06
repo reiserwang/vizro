@@ -57,53 +57,60 @@ def main():
                 uvicorn.run(app, host="0.0.0.0", port=8000)
                 
         if args.mode == "native":
-            import webview
-            from webview.menu import Menu, MenuAction
-            from threading import Thread
-            from api.routes import app
-            import uvicorn
-            import time
-            
-            print("🍏 Starting macOS Native Application Wrapper...")
-            
-            def start_api():
-                uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
-                
-            Thread(target=start_api, daemon=True).start()
-            time.sleep(1) # wait for API to start
-            
-            webview.create_window(
-                "Vizro Analytics Dashboard", 
-                "http://127.0.0.1:8000/ui/data_source.html",
-                width=1200, 
-                height=800,
-                min_size=(800, 600),
-                transparent=True,
-                frameless=True,
-                easy_drag=True
-            )
-            
-            # Recreate the application menu for macOS to restore standard keyboard shortcuts
-            # (copy, paste, cut, select all, undo, redo, quit) 
-            # In frameless mode, the default menu is often stripped, which disables these shortcuts natively.
-            def void(): pass
-            
-            menu_items = [
-                Menu('App', [
-                    MenuAction('Quit', webview.windows[0].destroy)
-                ]),
-                Menu('Edit', [
-                    MenuAction('Undo', void),
-                    MenuAction('Redo', void),
-                    MenuAction('Cut', void),
-                    MenuAction('Copy', void),
-                    MenuAction('Paste', void),
-                    MenuAction('Select All', void),
-                ])
-            ]
-            
-            webview.start(menu=menu_items)
-            return
+            # ── Native macOS App ─────────────────────────────────────────────
+            # Run in its own try/except so that benign missing-optional-deps
+            # (e.g. torch, pyarrow) don't trigger the fallback exit path.
+            try:
+                import webview
+                from webview.menu import Menu, MenuAction
+                from threading import Thread
+                from api.routes import app
+                import uvicorn
+                import time
+
+                print("🍏 Starting macOS Native Application Wrapper...")
+
+                def start_api():
+                    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+
+                Thread(target=start_api, daemon=True).start()
+                time.sleep(1.5)  # give uvicorn a moment to bind
+
+                webview.create_window(
+                    "Vizro Analytics Dashboard",
+                    "http://127.0.0.1:8000/ui/data_source.html",
+                    width=1200,
+                    height=800,
+                    min_size=(800, 600),
+                    transparent=True,
+                    frameless=True,
+                    easy_drag=True
+                )
+
+                def void(): pass
+
+                menu_items = [
+                    Menu('App', [
+                        MenuAction('Quit', webview.windows[0].destroy)
+                    ]),
+                    Menu('Edit', [
+                        MenuAction('Undo', void),
+                        MenuAction('Redo', void),
+                        MenuAction('Cut', void),
+                        MenuAction('Copy', void),
+                        MenuAction('Paste', void),
+                        MenuAction('Select All', void),
+                    ])
+                ]
+
+                webview.start(menu=menu_items)
+                return
+
+            except Exception as native_err:
+                print(f"❌ Native window failed to start: {native_err}")
+                import traceback
+                traceback.print_exc()
+                sys.exit(1)
 
         if args.mode in ["ui", "both"]:
             print("📊 Loading modular dashboard interface...")
@@ -129,8 +136,8 @@ def main():
         print(f"❌ Import error: {e}")
         print("💡 Trying fallback to original dashboard...")
         
-        if args.mode != "ui":
-            print("⚠️ API mode not supported in fallback. Exiting.")
+        if args.mode not in ["ui"]:
+            print("⚠️ API/native mode not supported in fallback. Exiting.")
             sys.exit(1)
             
         try:

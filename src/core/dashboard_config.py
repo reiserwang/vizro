@@ -3,8 +3,12 @@
 Dashboard Configuration and Constants
 """
 
+import sys
 import warnings
 warnings.filterwarnings('ignore')
+
+# Detect if running inside PyInstaller native .app bundle
+_IS_FROZEN = getattr(sys, 'frozen', False)
 
 # Global variables for data storage
 current_data = None
@@ -85,16 +89,27 @@ VIZRO_ENHANCED_CHART_TYPES = [
 ]
 
 # Forecasting model configurations
-FORECASTING_MODELS = [
+# LSTM is excluded from the native .app build (torch not bundled, ~276 MB savings).
+# It remains available in web/api mode when torch is installed.
+_FORECASTING_MODELS_CORE = [
     "Linear Regression",
-    "ARIMA", 
+    "ARIMA",
     "SARIMA",
     "VAR (Vector Autoregression)",
     "Dynamic Factor Model",
     "State-Space Model",
     "Nowcasting",
-    "LSTM (Deep Learning)"
 ]
+
+_FORECASTING_MODELS_OPTIONAL = [
+    "LSTM (Deep Learning)",   # Requires torch (~276 MB) — web mode only
+]
+
+FORECASTING_MODELS = (
+    _FORECASTING_MODELS_CORE
+    if _IS_FROZEN
+    else _FORECASTING_MODELS_CORE + _FORECASTING_MODELS_OPTIONAL
+)
 
 # Y-axis aggregation options
 Y_AXIS_AGGREGATIONS = [

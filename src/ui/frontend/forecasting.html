@@ -124,9 +124,14 @@
 <h2 class="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-4">Model Architecture</h2>
 <div class="flex p-1 bg-surface-container rounded-lg mb-6">
     <select id="model-select" class="w-full bg-surface-container-lowest border-none rounded-md text-sm font-semibold text-primary shadow-sm focus:ring-0 text-center">
-        <option value="Prophet">Prophet</option>
-        <option value="ARIMA">ARIMA</option>
-        <option value="LSTM">LSTM</option>
+        <option value="Linear Regression">Linear Regression</option>
+        <option value="ARIMA" selected>ARIMA</option>
+        <option value="SARIMA">SARIMA</option>
+        <option value="VAR (Vector Autoregression)">VAR (Vector Autoregression)</option>
+        <option value="Dynamic Factor Model">Dynamic Factor Model</option>
+        <option value="State-Space Model">State-Space Model</option>
+        <option value="Nowcasting">Nowcasting</option>
+        <option value="LSTM (Deep Learning)" disabled style="color: #9ca3af;">⚠ LSTM (Web Mode Only)</option>
     </select>
 </div>
 <div class="space-y-5">
